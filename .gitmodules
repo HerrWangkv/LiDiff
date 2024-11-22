@@ -1,0 +1,9 @@
+[submodule "thirdparty/pytorch3d"]
+	path = thirdparty/pytorch3d
+	url = https://github.com/facebookresearch/pytorch3d.git
+[submodule "thirdparty/hdbscan"]
+	path = thirdparty/hdbscan
+	url = https://github.com/scikit-learn-contrib/hdbscan.git
+[submodule "thirdparty/MinkowskiEngine"]
+	path = thirdparty/MinkowskiEngine
+	url = https://github.com/NVIDIA/MinkowskiEngine.git

@@ -19,13 +19,13 @@ Installing python (we have used python 3.8) packages pre-requisites:
 
 `pip install -r requirements.txt`
 
-`pip install thirsparty/hdbscan`
+`pip install thirdparty/hdbscan`
 
-`pip install thirsparty/pytorch3`
+`pip install thirdparty/pytorch3d`
 
 Installing MinkowskiEngine:
 
-`BLAS=openblas pip install -U MinkowskiEngine==0.5.4 -v --no-deps`
+`pip install -U thirdparty/MinkowskiEngine --no-deps`
 
 To setup the code run the following command on the code main directory:
 
