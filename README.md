@@ -15,15 +15,21 @@ Installing python (we have used python 3.8) packages pre-requisites:
 
 `sudo apt install build-essential python3-dev libopenblas-dev`
 
-`pip3 install -r requirements.txt`
+`pip install pip==24.0`
+
+`pip install -r requirements.txt`
+
+`pip install thirsparty/hdbscan`
+
+`pip install thirsparty/pytorch3`
 
 Installing MinkowskiEngine:
 
-`pip3 install -U MinkowskiEngine==0.5.4 --install-option="--blas=openblas" -v --no-deps`
+`BLAS=openblas pip install -U MinkowskiEngine==0.5.4 -v --no-deps`
 
 To setup the code run the following command on the code main directory:
 
-`pip3 install -U -e .`
+`pip install -U -e .`
 
 ## SemanticKITTI Dataset
 
