@@ -1,0 +1,39 @@
+experiment:
+    id: prob10_5p0reg
+
+##Data
+data:
+    data_dir: '/storage_local/kwang/nuscenes/raw'
+    splats_dir: '/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2'
+    # resolution: 0.05
+    dataloader: 'NuScenes'
+    split: 'train'
+    train: [0,1,2,3,4,5,6,7,8,9]
+    validation: []
+    test: []
+    num_lidar_points: 18000
+    horizontal_range: [-100., 100.]
+    vertical_range: [-8., 2.]
+
+##Training
+train:
+    uncond_prob: 0.1
+    uncond_w: 6.
+    n_gpus: 1
+    num_workers: 4
+    max_epoch: 20
+    lr: 0.0001
+    batch_size: 2
+    decay_lr: 1.0e-4
+
+diff:
+    beta_start: 3.5e-5
+    beta_end: 0.007
+    beta_func: 'linear'
+    t_steps: 1000
+    s_steps: 50
+    reg_weight: 5.0
+
+##Network
+model:
+    out_dim: 96

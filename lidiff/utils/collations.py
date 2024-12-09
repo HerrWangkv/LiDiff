@@ -97,3 +97,50 @@ class SparseSegmentCollation:
             'pcd_part' if self.mode == 'diffusion' else 'pcd_noise': torch.stack(batch[3]).float(),
             'filename': batch[4],
         }
+
+class LidarSplatsCollation:
+    def __init__(self, num_lidar_points, mode='diffusion'):
+        self.num_lidar_points = num_lidar_points
+        self.mode = mode
+        return
+
+    def __call__(self, data):
+        splats_lst = []
+        points_lst = []
+        p_mean_lst = []
+        p_std_lst = []
+        for i in range(len(data)):
+            splats = data[i]['splats']
+            points = data[i]['lidar']
+            splats, p_mean, p_std, points = splats_and_lidar_to_sparse(splats, points, self.num_lidar_points)
+            splats_lst.append(splats)
+            p_mean_lst.append(p_mean)
+            p_std_lst.append(p_std)
+            points_lst.append(points)
+
+        return {'splats': torch.stack(splats_lst).float(),
+            'mean': torch.stack(p_mean_lst).float(),
+            'std': torch.stack(p_std_lst).float(),
+            'points' if self.mode == 'diffusion' else 'pcd_noise': torch.stack(points_lst).float(),
+        }
+    
+def splats_and_lidar_to_sparse(splats, points, num_lidar_points):
+    pcd_splats = o3d.geometry.PointCloud()
+    pcd_splats.points = o3d.utility.Vector3dVector(splats[:, :3])
+    viewpoint_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd_splats, voxel_size=10.)
+    splats = torch.tensor(splats)
+
+    concat_lidar = np.ceil(num_lidar_points / points.shape[0]) 
+    points = points.repeat(concat_lidar, 0)
+    in_viewpoint = viewpoint_grid.check_if_included(o3d.utility.Vector3dVector(points))
+    points = points[in_viewpoint]
+    pcd_lidar = o3d.geometry.PointCloud()
+    pcd_lidar.points = o3d.utility.Vector3dVector(points)
+    pcd_lidar = pcd_lidar.farthest_point_down_sample(num_lidar_points)
+    points = torch.tensor(np.array(pcd_lidar.points))   
+    
+    # after creating the voxel coordinates we normalize the floating coordinates towards mean=0 and std=1
+    p_mean = splats[:,:3].mean(axis=0)
+    p_std = splats[:,:3].std(axis=0)
+
+    return [splats, p_mean, p_std, points]

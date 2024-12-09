@@ -18,14 +18,27 @@ from typing import List
 import math
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+from plyfile import PlyData, PlyElement
+import open3d as o3d
+import time
+import json
 
 warnings.filterwarnings('ignore')
+
+def timer(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        ret = func(*args, **kwargs)
+        print(f"Done in {time.time() - start_time:.2f} seconds")
+        print("="*6)
+        return ret
+    return wrapper
 
 #################################################
 ################## Data loader ##################
 #################################################
 
-class NuScenesDataset(NuScenes):
+class NuScenesBase(NuScenes):
     def __init__(self, version, dataroot, verbose=True, seqs=None, N=4, **kwargs):
         '''
         Args:
@@ -35,11 +48,10 @@ class NuScenesDataset(NuScenes):
             seqs (list): list of scene indices to load
             N (int): number of interpolated frames between keyframes
         '''
-        super().__init__(version=version, dataroot=dataroot, verbose=verbose, **kwargs)        
+        super().__init__(version=version, dataroot=dataroot, verbose=verbose, **kwargs) 
         self.seqs = seqs if seqs is not None else range(len(self.scene))
         self.N = N # Number of interpolated frames between keyframes
-        self.timestamps = [None for _ in self.seqs] # Nested lists of timestamps for each scene
-        self.get_timestamps()
+
         self.lidar = 'LIDAR_TOP'
         self.lidar_data_tokens = [] # Stacked list of LiDAR data tokens
         self.scene_indices = [] # [(scene_idx, timestamp_idx)]
@@ -47,9 +59,8 @@ class NuScenesDataset(NuScenes):
         self.cameras = {k:i for i,k in enumerate(['CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_RIGHT', 'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_FRONT_LEFT'])}
         self.img_data_tokens = [[] for _ in range(len(self.cameras))]
         self.camera_calib_tokens = [[] for _ in range(len(self.cameras))]
-        self.ego_pose_tokens = [] # Stacked list of ego pose tokens whenever CAM_FRONT is used
-        self.world_to_cam_front = np.empty((0, 4, 4)) # Transformation matrix from world to CAM_FRONT
         self.accumulate_img_and_calib_tokens()
+
         # https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/map_expansion/map_api.py#L684
         self.bev_colors = dict(drivable_area='#a6cee3',
             road_segment='#1f78b4',
@@ -97,6 +108,8 @@ class NuScenesDataset(NuScenes):
             "static.vegetation": (0, 175, 0),  # Green
             "vehicle.ego": (255, 240, 245)
         }
+
+        self.cache_dir = os.path.join(os.path.dirname(self.dataroot), f'cache/{self.version}')
         self.instance_infos = [None for _ in self.seqs]
         self.frame_instances = [None for _ in self.seqs]
         self.accumulate_objects()
@@ -145,18 +158,17 @@ class NuScenesDataset(NuScenes):
         
         return interpolated_timestamps
       
-    def get_timestamps(self):
-        for i, scene_idx in enumerate(self.seqs):
-            scene = self.scene[scene_idx]
-            frame_num = (self.N + 1) * (scene['nbr_samples'] - 1) + 1
-            scene_data = self.get('scene', scene['token'])
-            keyframe_timestamps = self.get_keyframe_timestamps(scene_data)
-            assert len(keyframe_timestamps) == scene['nbr_samples']
-            interpolated_timestamps = self.get_interpolated_timestamps(keyframe_timestamps)
-            assert len(interpolated_timestamps) == frame_num
-            self.timestamps[i] = interpolated_timestamps
+    def get_timestamps(self, scene_idx):
+        scene = self.scene[scene_idx]
+        frame_num = (self.N + 1) * (scene['nbr_samples'] - 1) + 1
+        scene_data = self.get('scene', scene['token'])
+        keyframe_timestamps = self.get_keyframe_timestamps(scene_data)
+        assert len(keyframe_timestamps) == scene['nbr_samples']
+        interpolated_timestamps = self.get_interpolated_timestamps(keyframe_timestamps)
+        assert len(interpolated_timestamps) == frame_num
+        return interpolated_timestamps
 
-    def find_cloest_lidar_tokens(self, scene_data, timestamps: List[int]):
+    def find_closest_lidar_tokens(self, scene_data, timestamps: List[int]):
         """Find the closest LiDAR tokens for given timestamps."""
         first_sample_token = scene_data['first_sample_token']
         first_sample_record = self.get('sample', first_sample_token)
@@ -222,44 +234,47 @@ class NuScenesDataset(NuScenes):
         
         return closest_tokens
     
+    @timer
     def accumulate_lidar_tokens(self):
         print('Accumulating LiDAR data tokens...')
         for i, scene_idx in enumerate(self.seqs):
             scene_token = self.scene[scene_idx]['token']
             scene_data = self.get('scene', scene_token)
-            timestamps = self.timestamps[i]
-            self.lidar_data_tokens += self.find_cloest_lidar_tokens(scene_data, timestamps)
+            timestamps = self.get_timestamps(scene_idx)
+            closest_lidar_tokens = self.find_closest_lidar_tokens(scene_data, timestamps)
+            self.lidar_data_tokens += closest_lidar_tokens
             self.scene_indices += [(i, t) for t in range(len(timestamps))]
         assert len(self.lidar_data_tokens) == len(self.scene_indices)
 
-    def accumulate_img_and_calib_tokens(self):
+    @timer
+    def accumulate_img_and_calib_tokens(self):        
         print('Accumulating image and calibration tokens...')
-        for i, scene_idx in enumerate(self.seqs):
+        for scene_idx in self.seqs:
             scene_token = self.scene[scene_idx]['token']
             scene_data = self.get('scene', scene_token)
-            timestamps = self.timestamps[i]
+            timestamps = self.get_timestamps(scene_idx)
             for cam_name in self.cameras.keys():
                 img_tokens = self.find_closest_img_tokens(scene_data, timestamps, cam_name)
                 self.img_data_tokens[self.cameras[cam_name]] += img_tokens
                 calib_tokens = [self.get('sample_data', token)['calibrated_sensor_token'] for token in img_tokens]
                 self.camera_calib_tokens[self.cameras[cam_name]] += calib_tokens
-                if cam_name == 'CAM_FRONT':
-                    # save ego poses whenever CAM_FRONT is used
-                    for token in img_tokens:
-                        cam_data = self.get('sample_data', token)
-                        ego_pose_token = cam_data['ego_pose_token']
-                        self.ego_pose_tokens.append(ego_pose_token)
-                        # save transformation matrix from world to CAM_FRONT
-                        calib_data = self.get('calibrated_sensor', calib_tokens[0])
-                        cam_to_ego = np.eye(4)
-                        cam_to_ego[:3, :3] = Quaternion(calib_data['rotation']).rotation_matrix
-                        cam_to_ego[:3, 3] = np.array(calib_data['translation'])
-                        ego_pose = self.get("ego_pose", ego_pose_token)
-                        ego_to_world = np.eye(4)
-                        ego_to_world[:3, :3] = Quaternion(ego_pose['rotation']).rotation_matrix
-                        ego_to_world[:3, 3] = np.array(ego_pose['translation'])
-                        cam_to_world = ego_to_world @ cam_to_ego
-                        self.world_to_cam_front = np.append(self.world_to_cam_front, [np.linalg.inv(cam_to_world)], axis=0)
+                # if cam_name == 'CAM_FRONT':
+                #     # save ego poses whenever CAM_FRONT is used
+                #     for token in img_tokens:
+                #         cam_data = self.get('sample_data', token)
+                #         ego_pose_token = cam_data['ego_pose_token']
+                #         self.ego_pose_tokens.append(ego_pose_token)
+                #         # save transformation matrix from world to CAM_FRONT
+                #         calib_data = self.get('calibrated_sensor', calib_tokens[0])
+                #         cam_to_ego = np.eye(4)
+                #         cam_to_ego[:3, :3] = Quaternion(calib_data['rotation']).rotation_matrix
+                #         cam_to_ego[:3, 3] = np.array(calib_data['translation'])
+                #         ego_pose = self.get("ego_pose", ego_pose_token)
+                #         ego_to_world = np.eye(4)
+                #         ego_to_world[:3, :3] = Quaternion(ego_pose['rotation']).rotation_matrix
+                #         ego_to_world[:3, 3] = np.array(ego_pose['translation'])
+                #         cam_to_world = ego_to_world @ cam_to_ego
+                #         self.world_to_cam_front = np.append(self.world_to_cam_front, [np.linalg.inv(cam_to_world)], axis=0)
         assert all([len(tokens) == len(self.scene_indices) for tokens in self.img_data_tokens])
         assert all([len(tokens) == len(self.scene_indices) for tokens in self.camera_calib_tokens])
 
@@ -389,20 +404,79 @@ class NuScenesDataset(NuScenes):
                 new_frame_instances[k] = []
         return new_instances_info, new_frame_instances
     
+    @timer
     def accumulate_objects(self):
+        objects_cache_dir = os.path.join(self.cache_dir, 'objects')
         print('Accumulating objects...')
         for i, scene_idx in enumerate(self.seqs):
-            scene_token = self.scene[scene_idx]['token']
-            scene_data = self.get('scene', scene_token)
-            instances_info = self.fetch_keyframe_objects(scene_data)
-            max_frame_idx = (self.N + 1) * (scene_data['nbr_samples'] - 1)
-            instances_info, frame_instances = self.interpolate_boxes(instances_info, max_frame_idx)
-            self.instance_infos[i] = instances_info
-            self.frame_instances[i] = frame_instances
+            os.makedirs(os.path.join(objects_cache_dir, f"{scene_idx}"), exist_ok=True)
+            instances_info_cache_path = os.path.join(objects_cache_dir, f'{scene_idx}/instances_info.json')
+            frame_instances_cache_path = os.path.join(objects_cache_dir, f'{scene_idx}/frame_instances.json')
+            if os.path.exists(instances_info_cache_path) and os.path.exists(frame_instances_cache_path):
+                with open(instances_info_cache_path, 'r') as f:
+                    instances_info = json.load(f)
+                with open(frame_instances_cache_path, 'r') as f:
+                    frame_instances = json.load(f)
+                self.instance_infos[i] = instances_info
+                self.frame_instances[i] = frame_instances
+            else:
+                scene_token = self.scene[scene_idx]['token']
+                scene_data = self.get('scene', scene_token)
+                instances_info = self.fetch_keyframe_objects(scene_data)
+                max_frame_idx = (self.N + 1) * (scene_data['nbr_samples'] - 1)
+                instances_info, frame_instances = self.interpolate_boxes(instances_info, max_frame_idx)
+                with open(instances_info_cache_path, 'w') as f:
+                    json.dump(instances_info, f)
+                with open(frame_instances_cache_path, 'w') as f:
+                    json.dump(frame_instances, f)
+                self.instance_infos[i] = instances_info
+                self.frame_instances[i] = frame_instances
 
     def is_keyframe(self, index):
         return self.scene_indices[index][1] % (self.N + 1) == 0
 
+    def get_frame_instances(self, index):
+        scene_idx, frame_idx = self.scene_indices[index]
+        if frame_idx in self.frame_instances[scene_idx]:
+            return self.frame_instances[scene_idx][frame_idx]
+        else:
+            return self.frame_instances[scene_idx][str(frame_idx)]
+    
+    def get_frame_annotation(self, index, instance_id):
+        scene_idx, frame_idx = self.scene_indices[index]
+        if instance_id in self.instance_infos[scene_idx]:
+            instance_info = self.instance_infos[scene_idx][instance_id]
+        else:
+            instance_info = self.instance_infos[scene_idx][str(instance_id)]
+        class_name = instance_info['class_name']
+        if frame_idx in instance_info['frame_annotations']:
+            obj_to_world, box_size = instance_info['frame_annotations'][frame_idx]
+        else:
+            obj_to_world, box_size = instance_info['frame_annotations'][str(frame_idx)]
+        return class_name, obj_to_world, box_size
+    
+    def get_ego_pose(self, index):
+        scene_idx, frame_idx = self.scene_indices[index]
+        img_token = self.img_data_tokens[0][index]
+        cam_data = self.get('sample_data', img_token)
+        ego_pose_token = cam_data['ego_pose_token']
+        ego_pose = self.get('ego_pose', ego_pose_token)
+        return ego_pose
+    
+    def get_world_to_cam_front(self, index):
+        scene_idx, frame_idx = self.scene_indices[index]
+        calib_token = self.camera_calib_tokens[0][index]
+        calib_data = self.get('calibrated_sensor', calib_token)
+        cam_to_ego = np.eye(4)
+        cam_to_ego[:3, :3] = Quaternion(calib_data['rotation']).rotation_matrix
+        cam_to_ego[:3, 3] = np.array(calib_data['translation'])
+        ego_pose = self.get_ego_pose(index)
+        ego_to_world = np.eye(4)
+        ego_to_world[:3, :3] = Quaternion(ego_pose['rotation']).rotation_matrix
+        ego_to_world[:3, 3] = np.array(ego_pose['translation'])
+        cam_to_world = ego_to_world @ cam_to_ego
+        return np.linalg.inv(cam_to_world)
+    
 class NuScenesCameras(Dataset):
     def __init__(self, nusc):
         super().__init__()
@@ -412,19 +486,24 @@ class NuScenesCameras(Dataset):
         return len(self.nusc.img_data_tokens[0])
     
     def __getitem__(self, index):
-        ret = torch.tensor([])
+        ret = []
         for i in range(len(self.nusc.cameras)):
             filename = self.nusc.get('sample_data', self.nusc.img_data_tokens[i][index])['filename']
-            ret = torch.cat((ret, torch.tensor(np.array(Image.open(os.path.join(self.nusc.dataroot, filename)).convert('RGB')).transpose(2,0,1)).unsqueeze(0)), 0)
+            img = np.array(Image.open(os.path.join(self.nusc.dataroot, filename)).convert('RGB')).transpose(2, 0, 1)
+            ret.append(img)
+        ret = np.concatenate(ret, axis=0)
         return ret
     
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.scene_indices)) and (self.nusc.scene_indices[index][0] == self.nusc.scene_indices[index+1][0]) else None
 
 class NuScenesLidar(Dataset):
-    def __init__(self, nusc):
+    def __init__(self, nusc, horizontal_range: List[float] = [-100, 100], vertical_range: List[float] = [-8, 2]):
         super().__init__()
         self.nusc = nusc
+        self.min_distance = 1.0 # in LiDAR frame
+        self.horizontal_range = horizontal_range # in CAM_FRONT frame
+        self.vertical_range = vertical_range # in CAM_FRONT frame
 
     def __len__(self):
         return len(self.nusc.lidar_data_tokens)
@@ -442,18 +521,89 @@ class NuScenesLidar(Dataset):
         lidar_to_world = ego_to_world @ lidar_to_ego
         filename = lidar_data['filename']
         points = np.fromfile(os.path.join(self.nusc.dataroot, filename), dtype=np.float32).reshape(-1, 5)
+        points = self.remove_close(points)
         xyz_in_lidar = points[:, :3]
         xyz_in_world = xyz_in_lidar[:, :3] @ lidar_to_world[:3, :3].T + lidar_to_world[:3, 3]
-        world_to_cam_front = self.nusc.world_to_cam_front[index]
+        world_to_cam_front = self.nusc.get_world_to_cam_front(index)
         xyz_in_cam_front = xyz_in_world @ world_to_cam_front[:3, :3].T + world_to_cam_front[:3, 3]
         points[:, :3] = xyz_in_cam_front
-        return torch.tensor(points)
+        points = self.remove_far(points)
+        return points[:, :3]
+    
+    def next_frame(self, index):
+        return self[index+1] if (index + 1 < len(self.nusc.scene_indices)) and (self.nusc.scene_indices[index][0] == self.nusc.scene_indices[index+1][0]) else None
+    
+    def remove_close(self, points):
+        x_filt = np.abs(points[:, 0]) < self.min_distance
+        y_filt = np.abs(points[:, 1]) < self.min_distance
+        not_close = np.logical_not(np.logical_and(x_filt, y_filt))
+        return points[not_close]
+    
+    def remove_far(self, points):
+        x_filt = np.logical_and(points[:, 0] > self.horizontal_range[0], points[:, 0] < self.horizontal_range[1])
+        y_filt = np.logical_and(points[:, 1] > self.vertical_range[0], points[:, 1] < self.vertical_range[1])
+        z_filt = np.logical_and(points[:, 2] > self.horizontal_range[0], points[:, 2] < self.horizontal_range[1])
+        mask = np.logical_and(np.logical_and(x_filt, y_filt), z_filt)
+        return points[mask]
+
+class NuScenesBoxes(Dataset):
+    def __init__(self, nusc):
+        super().__init__()
+        self.nusc = nusc
+    
+    def __len__(self):
+        return len(self.nusc.scene_indices)
+    
+    def __getitem__(self, index):
+        frame_instances = self.nusc.get_frame_instances(index)
+        boxes = dict()
+        for instance_id in frame_instances:
+            class_name, obj_to_world, box_size = self.nusc.get_frame_annotation(index, instance_id)
+            obj_to_cam_front = self.nusc.get_world_to_cam_front(index) @ obj_to_world
+            obj_corners = np.array([[+box_size[0]/2, +box_size[1]/2, +box_size[2]/2],
+                                    [+box_size[0]/2, +box_size[1]/2, -box_size[2]/2],
+                                    [+box_size[0]/2, -box_size[1]/2, +box_size[2]/2],
+                                    [+box_size[0]/2, -box_size[1]/2, -box_size[2]/2],
+                                    [-box_size[0]/2, +box_size[1]/2, +box_size[2]/2],
+                                    [-box_size[0]/2, +box_size[1]/2, -box_size[2]/2],
+                                    [-box_size[0]/2, -box_size[1]/2, +box_size[2]/2],
+                                    [-box_size[0]/2, -box_size[1]/2, -box_size[2]/2]])
+            obj_corners_in_cam_front = obj_corners @ obj_to_cam_front[:3, :3].T + obj_to_cam_front[:3, 3]
+            boxes[instance_id] = (class_name, obj_corners_in_cam_front)
+        return boxes
+    
+    def next_frame(self, index):
+        return self[index+1] if (index + 1 < len(self.nusc.scene_indices)) and (self.nusc.scene_indices[index][0] == self.nusc.scene_indices[index+1][0]) else None
+    
+class NuScenesSplats(Dataset):
+    def __init__(self, nusc, model_dir):
+        super().__init__()
+        self.nusc = nusc
+        self.model_dir = model_dir
+
+    def __len__(self):
+        return len(self.nusc.scene_indices)
+    
+    def __getitem__(self, index):
+        scene_idx, frame_idx = self.nusc.scene_indices[index]
+        splats_path = os.path.join(self.model_dir, f'{scene_idx}', f'frame_{frame_idx}.ply')
+        splats = PlyData.read(splats_path)
+        x = splats['vertex']['x'] # map size
+        y = splats['vertex']['y'] # map size
+        z = splats['vertex']['z'] # map size
+        f_dc = np.array([splats['vertex'][f'f_dc_{i}'] for i in range(3)]) # [-2.2,2.2]---
+        f_rest = np.array([splats['vertex'][f'f_rest_{i}'] for i in range(45)]) # [-0.9, 0.9]---
+        opacity = splats['vertex']['opacity'] # [0,1]
+        scale = np.array([splats['vertex'][f'scale_{i}'] for i in range(3)]) # [0, 38]---
+        rotation = np.array([splats['vertex'][f'rot_{i}'] for i in range(4)]) # [-1,1]
+        ret = np.vstack([x[None,:], y[None,:], z[None,:], f_dc, f_rest, opacity[None,:], scale, rotation]).T
+        return ret
     
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.scene_indices)) and (self.nusc.scene_indices[index][0] == self.nusc.scene_indices[index+1][0]) else None
     
 class NuScenesBev(Dataset):
-    def __init__(self, nusc, map_size=500, canvas_size=500):
+    def __init__(self, nusc, map_size, canvas_size=1000):
         super().__init__()
         self.nusc = nusc
         self.map_size = map_size
@@ -476,21 +626,21 @@ class NuScenesBev(Dataset):
         scene_idx = self.nusc.scene_indices[index][0]
         scene = self.nusc.scene[scene_idx]
         map_ = self.maps[scene['log_token']]
-        ego_pose = self.nusc.get('ego_pose', self.nusc.ego_pose_tokens[index])
-        cam_front_in_world = np.linalg.inv(self.nusc.world_to_cam_front[index])[:3, 3]
+        ego_pose = self.nusc.get_ego_pose(index)
+        cam_front_in_world = np.linalg.inv(self.nusc.get_world_to_cam_front(index))[:3, 3]
         patch_box = (cam_front_in_world[0], cam_front_in_world[1], self.map_size//2, self.map_size//2)
         ypr_rad = Quaternion(ego_pose['rotation']).yaw_pitch_roll
         patch_angle = math.degrees(ypr_rad[0])
         canvas_size = (self.canvas_size, self.canvas_size)
         map_mask = map_.get_map_mask(patch_box, patch_angle, list(self.nusc.bev_colors.keys()), canvas_size)
-        return torch.tensor(map_mask)
+        return map_mask
     
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.scene_indices)) and (self.nusc.scene_indices[index][0] == self.nusc.scene_indices[index+1][0]) else None
     
-    def vis(self, index, points=None, boxes=None):
+    def vis(self, index, points=None, boxes=None, splats_pos=None, save_as="conditions.png"):
         plt.figure(figsize=(15, 15))
-        map_mask = self[index].numpy()
+        map_mask = self[index]
         map_img = np.ones((self.canvas_size, self.canvas_size, 3))
         for i, layer_color in enumerate(self.nusc.bev_colors.values()):
             rgb_color = np.array(mcolors.hex2color(layer_color))
@@ -498,8 +648,13 @@ class NuScenesBev(Dataset):
             map_img += map_mask[i][:,:, None] * rgb_color
         plt.imshow(map_img, origin='lower')
         if points is not None:
+            # print("\tPoints:", points[:,0].min(), points[:,0].max(), points[:,1].min(), points[:,1].max(), points[:,2].min(), points[:,2].max())
             ratio = self.canvas_size / self.map_size
             plt.scatter(points[:, 2] * ratio + self.canvas_size//2, -points[:, 0] * ratio + self.canvas_size//2, s=0.05, c='k')
+        if splats_pos is not None:
+            # print("\tSplats:", splats_pos[:,0].min(), splats_pos[:,0].max(), splats_pos[:,1].min(), splats_pos[:,1].max(), splats_pos[:,2].min(), splats_pos[:,2].max())
+            ratio = self.canvas_size / self.map_size
+            plt.scatter(splats_pos[:, 2] * ratio + self.canvas_size//2, -splats_pos[:, 0] * ratio + self.canvas_size//2, s=0.05, c='yellow', alpha=0.5)
         if boxes is not None:
             for (class_name, obj_corners_in_cam_front) in boxes.values():
                 obj_corners_in_cam_front = obj_corners_in_cam_front[:, [2, 0]]
@@ -514,48 +669,66 @@ class NuScenesBev(Dataset):
         plt.ylim(0, self.canvas_size)
         plt.xticks([0, self.canvas_size//2, self.canvas_size], [-self.map_size//2, 0, self.map_size//2])
         plt.yticks([0, self.canvas_size//2, self.canvas_size], [-self.map_size//2, 0, self.map_size//2])
-        plt.savefig('conditions.png', bbox_inches='tight')
+        plt.savefig(save_as, bbox_inches='tight')
         plt.close()
 
-class NuScenesBoxes(Dataset):
-    def __init__(self, nusc):
+class NuScenesDataset(Dataset):
+    def __init__(self, version, dataroot, splats_dir, map_size, seqs=None, N=4, keys=['cameras', 'lidar', 'bev', 'boxes', 'splats']):
         super().__init__()
-        self.nusc = nusc
-    
+        self.nusc = NuScenesBase(version=version, dataroot=dataroot, seqs=seqs, N=N)
+        self.splats = NuScenesSplats(self.nusc, model_dir=splats_dir)
+        self.cameras = NuScenesCameras(self.nusc)
+        self.lidar = NuScenesLidar(self.nusc)
+        self.bev = NuScenesBev(self.nusc, map_size=map_size)
+        self.boxes = NuScenesBoxes(self.nusc)
+        self.keys = keys
+
     def __len__(self):
         return len(self.nusc.scene_indices)
     
     def __getitem__(self, index):
-        scene_idx, frame_idx = self.nusc.scene_indices[index]
-        frame_instances = self.nusc.frame_instances[scene_idx][frame_idx]
-        boxes = dict()
-        for instance_id in frame_instances:
-            instance_info = self.nusc.instance_infos[scene_idx][instance_id]
-            class_name = instance_info['class_name']
-            obj_to_world, box_size = instance_info['frame_annotations'][frame_idx]
-            obj_to_cam_front = self.nusc.world_to_cam_front[index] @ obj_to_world
-            obj_corners = np.array([[+box_size[0]/2, +box_size[1]/2, +box_size[2]/2],
-                                    [+box_size[0]/2, +box_size[1]/2, -box_size[2]/2],
-                                    [+box_size[0]/2, -box_size[1]/2, +box_size[2]/2],
-                                    [+box_size[0]/2, -box_size[1]/2, -box_size[2]/2],
-                                    [-box_size[0]/2, +box_size[1]/2, +box_size[2]/2],
-                                    [-box_size[0]/2, +box_size[1]/2, -box_size[2]/2],
-                                    [-box_size[0]/2, -box_size[1]/2, +box_size[2]/2],
-                                    [-box_size[0]/2, -box_size[1]/2, -box_size[2]/2]])
-            obj_corners_in_cam_front = obj_corners @ obj_to_cam_front[:3, :3].T + obj_to_cam_front[:3, 3]
-            boxes[instance_id] = (class_name, obj_corners_in_cam_front)
-        return boxes
+        ret = {}
+        if 'cameras' in self.keys:
+            ret['cameras'] = self.cameras[index]
+        if 'lidar' in self.keys:
+            ret['lidar'] = self.lidar[index]
+        if 'bev' in self.keys:
+            ret['bev'] = self.bev[index]
+        if 'boxes' in self.keys:
+            ret['boxes'] = self.boxes[index]
+        if 'splats' in self.keys:
+            ret['splats'] = self.splats[index]
+        return ret
     
-def visualize(idx, m, l=None, b=None):
-    points = l[idx] if l is not None else None
-    boxes = b[idx] if b is not None else None
-    m.vis(idx, points, boxes)
+    def next_frame(self, index):
+        return self[index+1] if (index + 1 < len(self.nusc.scene_indices)) and (self.nusc.scene_indices[index][0] == self.nusc.scene_indices[index+1][0]) else None
 
-## Example Usage
-# n = NuScenesDataset(version='v1.0-mini', dataroot='/tmp/nuscenes_kwang', verbose=True, seqs=range(10))
-# c = NuScenesCameras(n)
-# l = NuScenesLidar(n)
-# m = NuScenesBev(n, map_size=80, canvas_size=1000)
-# b = NuScenesBoxes(n)
-# print([i for i, t in enumerate(n.scene_indices) if t[1]==0])
-# visualize(387, m, l, b)
+    def vis(self, *args, **kwargs):
+        self.bev.vis(*args, **kwargs)
+
+# Example Usage
+# def visualize(idx, dataset, save_as="conditions.png"):
+#     start_time = time.time()
+#     item = dataset[idx]
+#     points = item['lidar']
+#     boxes = item['boxes']
+#     splats_pos = item['splats']
+#     print(f"Done data sampling time: {time.time() - start_time:.2f}s")
+#     print("="*6)
+#     start_time = time.time()
+#     dataset.vis(idx, points, boxes, splats_pos, save_as)
+#     print(f"Done visualization time: {time.time() - start_time:.2f}s")
+
+
+# dataset = NuScenesDataset(version='v1.0-trainval', 
+#                           dataroot='/storage_local/kwang/nuscenes/raw', 
+#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2', 
+#                           map_size=200, 
+#                           seqs=range(10))
+# visualize(10, dataset)
+
+# from lidiff.utils.collations import splats_and_lidar_to_sparse
+# data = dataset[0]
+# lidar = data['lidar']
+# splats = data['splats']
+# sparse = splats_and_lidar_to_sparse(splats, lidar, 180000, 18000)
