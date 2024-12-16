@@ -139,7 +139,6 @@ def splats_and_lidar_to_sparse(splats, points, num_lidar_points):
     pcd_lidar = pcd_lidar.farthest_point_down_sample(num_lidar_points)
     points = torch.tensor(np.array(pcd_lidar.points))   
     
-    # after creating the voxel coordinates we normalize the floating coordinates towards mean=0 and std=1
     p_mean = splats[:,:3].mean(axis=0)
     p_std = splats[:,:3].std(axis=0)
 

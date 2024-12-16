@@ -10,3 +10,5 @@ open3d==0.17.0
 natsort==8.1.0
 pykeops==2.1.2
 diffusers==0.18.0
+nuscenes-devkit
+plyfile

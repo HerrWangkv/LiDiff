@@ -147,6 +147,7 @@ class MinkUNetDiff(nn.Module):
 
         cr = kwargs.get('cr', 1.0)
         in_channels = kwargs.get('in_channels', 3)
+        out_channels = kwargs.get('out_channels', 3)
         cs = [32, 32, 64, 128, 256, 256, 128, 96, 96]
         cs = [int(cr * x) for x in cs] 
         self.embed_dim = cs[-1]
@@ -376,7 +377,7 @@ class MinkUNetDiff(nn.Module):
         self.last  = nn.Sequential(
             nn.Linear(cs[8], 20),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(20, 3),
+            nn.Linear(20, out_channels),
         )
 
         self.weight_initialization()
