@@ -497,11 +497,12 @@ class NuScenesCameras(Dataset):
     
     def __getitem__(self, index):
         ret = []
-        for i in range(len(self.nusc.cameras)):
+        for cam in ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']:
+            i = self.nusc.cameras[cam]
             filename = self.nusc.get('sample_data', self.nusc.img_data_tokens[i][index])['filename']
             img = np.array(Image.open(os.path.join(self.nusc.dataroot, filename)).convert('RGB')).transpose(2, 0, 1)
             ret.append(img)
-        ret = np.concatenate(ret, axis=0)
+        ret = np.array(ret)
         return ret
     
     def next_frame(self, index):
@@ -650,7 +651,17 @@ class NuScenesBev(Dataset):
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
     
-    def vis(self, index, points=None, boxes=None, splats_pos=None, save_as="conditions.png"):
+    def vis(self, index, imgs=None, points=None, boxes=None, splats_pos=None):
+        if imgs is not None:
+            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+            for i, ax in enumerate(axes.flat):
+                img = imgs[i].transpose(1, 2, 0)
+                ax.imshow(img)
+                ax.set_title(['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT'][i])
+                ax.axis('off')
+            plt.tight_layout()
+            plt.savefig("cameras.png", bbox_inches='tight')
+            plt.close()
         plt.figure(figsize=(15, 15))
         map_mask = self[index]
         map_img = np.ones((self.canvas_size, self.canvas_size, 3))
@@ -681,7 +692,7 @@ class NuScenesBev(Dataset):
         plt.ylim(0, self.canvas_size)
         plt.xticks([0, self.canvas_size//2, self.canvas_size], [-self.map_size//2, 0, self.map_size//2])
         plt.yticks([0, self.canvas_size//2, self.canvas_size], [-self.map_size//2, 0, self.map_size//2])
-        plt.savefig(save_as, bbox_inches='tight')
+        plt.savefig("conditions.png", bbox_inches='tight')
         plt.close()
 
 class NuScenesDataset(Dataset):
@@ -719,16 +730,17 @@ class NuScenesDataset(Dataset):
         self.bev.vis(*args, **kwargs)
 
 # Example Usage
-# def visualize(idx, dataset, save_as="conditions.png"):
+# def visualize(idx, dataset):
 #     start_time = time.time()
 #     item = dataset[idx]
+#     imgs = item['cameras']
 #     points = item['lidar']
 #     boxes = item['boxes']
 #     splats_pos = item['splats']
 #     print(f"Done data sampling time: {time.time() - start_time:.2f}s")
 #     print("="*6)
 #     start_time = time.time()
-#     dataset.vis(idx, points, boxes, splats_pos, save_as)
+#     dataset.vis(idx, imgs, points, boxes, splats_pos)
 #     print(f"Done visualization time: {time.time() - start_time:.2f}s")
 
 
@@ -738,7 +750,6 @@ class NuScenesDataset(Dataset):
 #                           map_size=200, 
 #                           split="mini_val")
 # visualize(10, dataset)
-
 # from lidiff.utils.collations import splats_and_lidar_to_sparse
 # data = dataset[0]
 # lidar = data['lidar']
