@@ -8,6 +8,7 @@ import open3d as o3d
 from lidiff.utils.scheduling import beta_func
 from tqdm import tqdm
 from os import makedirs, path
+import wandb
 
 from pytorch_lightning.core.lightning import LightningModule
 from pytorch_lightning import LightningDataModule
@@ -422,8 +423,8 @@ class DiffusionSplats(LightningModule):
         self.dpm_scheduler.sigmas = self.dpm_scheduler.sigmas.cuda()
 
     def q_sample(self, x, t, noise):
-        return self.sqrt_alphas_cumprod[t][:,None,None].cuda() * x + \
-                self.sqrt_one_minus_alphas_cumprod[t][:,None,None].cuda() * noise
+        return self.sqrt_alphas_cumprod[t.cpu()][:,None,None].cuda() * x + \
+                self.sqrt_one_minus_alphas_cumprod[t.cpu()][:,None,None].cuda() * noise
 
     def classfree_forward(self, x_t, x_cond, x_uncond, t):
         x_t_sparse = x_t.sparse()
@@ -441,14 +442,13 @@ class DiffusionSplats(LightningModule):
         return x_part, x_uncond
 
     def p_sample_loop(self, x_init, x_t, x_cond, x_uncond, gt_pts, x_mean, x_std):
-        pcd = o3d.geometry.PointCloud()
         self.scheduler_to_cuda()
 
         for t in tqdm(range(len(self.dpm_scheduler.timesteps))):
             t = torch.ones(gt_pts.shape[0]).cuda().long() * self.dpm_scheduler.timesteps[t].cuda()
             
             noise_t = self.classfree_forward(x_t, x_cond, x_uncond, t)
-            input_noise = x_t.F.reshape(t.shape[0],-1,3) - x_init
+            input_noise = x_t.F.reshape(t.shape[0],-1,14) - x_init
             x_t = x_init + self.dpm_scheduler.step(noise_t, t[0], input_noise)['prev_sample']
             x_t = self.points_to_tensor(x_t, x_mean, x_std)
 
@@ -526,6 +526,7 @@ class DiffusionSplats(LightningModule):
         self.log('train/loss', loss)
         self.log('train/var', std_noise.var())
         self.log('train/std', std_noise.std())
+        wandb.log({'train/loss_mse': loss_mse, 'train/loss_mean': loss_mean, 'train/loss_std': loss_std, 'train/loss': loss, 'train/var': std_noise.var(), 'train/std': std_noise.std()})
         torch.cuda.empty_cache()
 
         return loss
@@ -540,7 +541,8 @@ class DiffusionSplats(LightningModule):
             gt_pts = batch['splats'].detach().cpu().numpy()
 
             # for inference we get the partial pcd and sample the noise around the partial
-            x_init = batch['points'].repeat(1,10,1)
+            x_init = torch.zeros_like(batch['splats'])
+            x_init[:,:,:3] = batch['points'].repeat(1,10,1)
             x_feats = x_init + torch.randn(x_init.shape, device=self.device)
             x_full = self.points_to_tensor(x_feats, batch['mean'], batch['std'])
             x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
@@ -549,16 +551,16 @@ class DiffusionSplats(LightningModule):
             )
 
             x_gen_eval = self.p_sample_loop(x_init, x_full, x_part, x_uncond, gt_pts, batch['mean'], batch['std'])
-            x_gen_eval = x_gen_eval.F.reshape((gt_pts.shape[0],-1,3))
+            x_gen_eval = x_gen_eval.F.reshape((gt_pts.shape[0],-1,14))
 
             for i in range(len(batch['splats'])):
                 pcd_pred = o3d.geometry.PointCloud()
                 c_pred = x_gen_eval[i].cpu().detach().numpy()
-                pcd_pred.points = o3d.utility.Vector3dVector(c_pred)
+                pcd_pred.points = o3d.utility.Vector3dVector(c_pred[:,:3])
 
                 pcd_gt = o3d.geometry.PointCloud()
                 g_pred = batch['splats'][i].cpu().detach().numpy()
-                pcd_gt.points = o3d.utility.Vector3dVector(g_pred)
+                pcd_gt.points = o3d.utility.Vector3dVector(g_pred[:,:3])
 
                 self.chamfer_distance.update(pcd_gt, pcd_pred)
                 self.precision_recall.update(pcd_gt, pcd_pred)
@@ -571,9 +573,10 @@ class DiffusionSplats(LightningModule):
         self.log('val/precision', pr, on_step=True)
         self.log('val/recall', re, on_step=True)
         self.log('val/fscore', f1, on_step=True)
+        wandb.log({'val/cd_mean': cd_mean, 'val/cd_std': cd_std, 'val/precision': pr, 'val/recall': re, 'val/fscore': f1})
         torch.cuda.empty_cache()
 
-        return None #{'val/cd_mean': cd_mean, 'val/cd_std': cd_std, 'val/precision': pr, 'val/recall': re, 'val/fscore': f1}
+        return {'val/cd_mean': cd_mean, 'val/cd_std': cd_std, 'val/precision': pr, 'val/recall': re, 'val/fscore': f1}
     
     def valid_paths(self, filenames):
         output_paths = []
@@ -646,7 +649,7 @@ class DiffusionSplats(LightningModule):
         self.log('test/fscore', f1, on_step=True)
         torch.cuda.empty_cache()
 
-        return None# {'test/cd_mean': cd_mean, 'test/cd_std': cd_std, 'test/precision': pr, 'test/recall': re, 'test/fscore': f1}
+        return {'test/cd_mean': cd_mean, 'test/cd_std': cd_std, 'test/precision': pr, 'test/recall': re, 'test/fscore': f1}
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams['train']['lr'], betas=(0.9, 0.999))

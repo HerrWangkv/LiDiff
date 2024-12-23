@@ -21,6 +21,8 @@ import time
 import json
 
 from lidiff.utils.gsplat_utils import normalize_attributes
+from tqdm import tqdm
+import argparse
 
 warnings.filterwarnings('ignore')
 
@@ -38,7 +40,7 @@ def timer(func):
 #################################################
 
 class NuScenesBase(NuScenes):
-    def __init__(self, version, dataroot, split, verbose=True, N=4, **kwargs):
+    def __init__(self, version, dataroot, split, map_size, canvas_size, verbose=True, N=4, keys=['cameras', 'lidar', 'bev', 'boxes', 'splats'], **kwargs):
         '''
         Args:
             version (str): version of the dataset, e.g. 'v1.0-trainval'
@@ -46,10 +48,20 @@ class NuScenesBase(NuScenes):
             verbose (bool): whether to print information of the dataset
             seqs (list): list of scene indices to load
             N (int): number of interpolated frames between keyframes
+            keys (list): list of keys to load
         '''
         super().__init__(version=version, dataroot=dataroot, verbose=verbose, **kwargs) 
         self.split = split
-        self.accumulate_seqs()
+        self.map_size = map_size
+        self.canvas_size = canvas_size
+        if isinstance(self.split, str):
+            self.seqs = []
+            self.accumulate_seqs()
+        else:
+            self.seqs = self.split
+            print(f"Number of scenes: {len(self.seqs)}")
+            print("="*6)
+        print(f"Data to load: {keys}")
         self.N = N # Number of interpolated frames between keyframes
 
         self.lidar = 'LIDAR_TOP'
@@ -63,15 +75,15 @@ class NuScenesBase(NuScenes):
 
         # https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/map_expansion/map_api.py#L684
         self.bev_colors = dict(drivable_area='#a6cee3',
-            road_segment='#1f78b4',
-            road_block='#b2df8a',
-            lane='#33a02c',
-            ped_crossing='#fb9a99',
-            walkway='#e31a1c',
-            stop_line='#fdbf6f',
-            carpark_area='#ff7f00',
-            road_divider='#cab2d6',
-            lane_divider='#6a3d9a',
+            road_segment='#1f78b4', # blue
+            road_block='#b2df8a', # light green
+            lane='#33a02c', # green
+            ped_crossing='#fb9a99', # pink
+            walkway='#e31a1c', # red
+            stop_line='#fdbf6f', # light orange
+            carpark_area='#ff7f00', # orange
+            # road_divider='#cab2d6', # light purple
+            # lane_divider='#6a3d9a', # purple
             # traffic_light='#7e772e'
         )
         self.object_colors = {  # RGB.
@@ -110,15 +122,18 @@ class NuScenesBase(NuScenes):
         }
 
         self.cache_dir = os.path.join(os.path.dirname(self.dataroot), f'cache/{self.version}')
-        self.instance_infos = [None for _ in self.seqs]
-        self.frame_instances = [None for _ in self.seqs]
-        self.accumulate_objects()
+        if 'boxes' in keys:
+            self.instance_infos = [None for _ in self.seqs]
+            self.frame_instances = [None for _ in self.seqs]
+            self.accumulate_objects()
+        if 'bev' in keys:
+            self.maps = {}
+            self.accumulate_maps()
 
     def accumulate_seqs(self):
         if self.version == 'v1.0-mini' and not self.split.startswith('mini_'):
             self.split = 'mini_' + self.split
         assert self.split in ['train', 'val', 'test', 'mini_train', 'mini_val'], f"Invalid split: {self.split}"
-        self.seqs = []
         scene_names = create_splits_scenes()[self.split]
         for i in range(len(self.scene)):
             if self.scene[i]['name'] in scene_names:
@@ -171,11 +186,10 @@ class NuScenesBase(NuScenes):
         return interpolated_timestamps
       
     def get_timestamps(self, scene_idx):
-        scene = self.scene[scene_idx]
-        frame_num = (self.N + 1) * (scene['nbr_samples'] - 1) + 1
-        scene_data = self.get('scene', scene['token'])
+        scene_data = self.scene[scene_idx]
+        frame_num = (self.N + 1) * (scene_data['nbr_samples'] - 1) + 1
         keyframe_timestamps = self.get_keyframe_timestamps(scene_data)
-        assert len(keyframe_timestamps) == scene['nbr_samples']
+        assert len(keyframe_timestamps) == scene_data['nbr_samples']
         interpolated_timestamps = self.get_interpolated_timestamps(keyframe_timestamps)
         assert len(interpolated_timestamps) == frame_num
         return interpolated_timestamps
@@ -249,9 +263,8 @@ class NuScenesBase(NuScenes):
     @timer
     def accumulate_lidar_tokens(self):
         print('Accumulating LiDAR data tokens...')
-        for i, scene_idx in enumerate(self.seqs):
-            scene_token = self.scene[scene_idx]['token']
-            scene_data = self.get('scene', scene_token)
+        for i, scene_idx in enumerate(tqdm(self.seqs)):
+            scene_data = self.scene[scene_idx]
             timestamps = self.get_timestamps(scene_idx)
             closest_lidar_tokens = self.find_closest_lidar_tokens(scene_data, timestamps)
             self.lidar_data_tokens += closest_lidar_tokens
@@ -261,9 +274,8 @@ class NuScenesBase(NuScenes):
     @timer
     def accumulate_img_and_calib_tokens(self):        
         print('Accumulating image and calibration tokens...')
-        for scene_idx in self.seqs:
-            scene_token = self.scene[scene_idx]['token']
-            scene_data = self.get('scene', scene_token)
+        for scene_idx in tqdm(self.seqs):
+            scene_data = self.scene[scene_idx]
             timestamps = self.get_timestamps(scene_idx)
             for cam_name in self.cameras.keys():
                 img_tokens = self.find_closest_img_tokens(scene_data, timestamps, cam_name)
@@ -420,7 +432,7 @@ class NuScenesBase(NuScenes):
     def accumulate_objects(self):
         objects_cache_dir = os.path.join(self.cache_dir, 'objects')
         print('Accumulating objects...')
-        for i, scene_idx in enumerate(self.seqs):
+        for i, scene_idx in enumerate(tqdm(self.seqs)):
             os.makedirs(os.path.join(objects_cache_dir, f"{scene_idx}"), exist_ok=True)
             instances_info_cache_path = os.path.join(objects_cache_dir, f'{scene_idx}/instances_info.json')
             frame_instances_cache_path = os.path.join(objects_cache_dir, f'{scene_idx}/frame_instances.json')
@@ -432,8 +444,7 @@ class NuScenesBase(NuScenes):
                 self.instance_infos[i] = instances_info
                 self.frame_instances[i] = frame_instances
             else:
-                scene_token = self.scene[scene_idx]['token']
-                scene_data = self.get('scene', scene_token)
+                scene_data = self.scene[scene_idx]
                 instances_info = self.fetch_keyframe_objects(scene_data)
                 max_frame_idx = (self.N + 1) * (scene_data['nbr_samples'] - 1)
                 instances_info, frame_instances = self.interpolate_boxes(instances_info, max_frame_idx)
@@ -443,6 +454,35 @@ class NuScenesBase(NuScenes):
                     json.dump(frame_instances, f)
                 self.instance_infos[i] = instances_info
                 self.frame_instances[i] = frame_instances
+    
+    @timer
+    def accumulate_maps(self):
+        maps_cache_dir = os.path.join(self.cache_dir, 'maps')
+        print('Accumulating maps...')
+        current_seq = -1
+        for index in tqdm(range(len(self.seq_indices))):
+            seq_idx, frame_idx = self.seq_indices[index]
+            scene_idx = self.seqs[seq_idx]
+            if os.path.exists(os.path.join(maps_cache_dir, f"{scene_idx}/frame_{frame_idx}.npy")):
+                continue
+            if (seq_idx != current_seq):
+                os.makedirs(os.path.join(maps_cache_dir, f"{scene_idx}"), exist_ok=True)
+                scene_data = self.scene[scene_idx]
+                if scene_data['log_token'] not in self.maps:
+                    log = self.get('log', scene_data['log_token'])
+                    map_data = NuScenesMap(self.dataroot, log['location'])
+                    self.maps[scene_data['log_token']] = map_data
+                map_ = self.maps[scene_data['log_token']]
+                current_seq += 1
+            ego_pose = self.get_ego_pose(index)
+            cam_front_in_world = np.linalg.inv(self.get_world_to_cam_front(index))[:3, 3]
+            patch_box = (cam_front_in_world[0], cam_front_in_world[1], self.map_size, self.map_size)
+            ypr_rad = Quaternion(ego_pose['rotation']).yaw_pitch_roll
+            patch_angle = math.degrees(ypr_rad[0])
+            canvas_size = (self.canvas_size, self.canvas_size)
+            map_mask = map_.get_map_mask(patch_box, patch_angle, list(self.bev_colors.keys()), canvas_size)
+            np.save(os.path.join(maps_cache_dir, f"{scene_idx}/frame_{frame_idx}.npy"), map_mask)
+
 
     def is_keyframe(self, index):
         return self.seq_indices[index][1] % (self.N + 1) == 0
@@ -486,7 +526,7 @@ class NuScenesBase(NuScenes):
         ego_to_world[:3, 3] = np.array(ego_pose['translation'])
         cam_to_world = ego_to_world @ cam_to_ego
         return np.linalg.inv(cam_to_world)
-    
+
 class NuScenesCameras(Dataset):
     def __init__(self, nusc):
         super().__init__()
@@ -615,37 +655,18 @@ class NuScenesSplats(Dataset):
         return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
     
 class NuScenesBev(Dataset):
-    def __init__(self, nusc, map_size, canvas_size=1000):
+    def __init__(self, nusc):
         super().__init__()
         self.nusc = nusc
-        self.map_size = map_size
-        self.canvas_size = canvas_size
-        self.maps = {}
-        self.iterate_maps()
-
-    def iterate_maps(self):
-        for scene_idx in self.nusc.seqs:
-            scene = self.nusc.scene[scene_idx]
-            if scene['log_token'] not in self.maps:
-                log = self.nusc.get('log', scene['log_token'])
-                map_data = NuScenesMap(self.nusc.dataroot, log['location'])
-                self.maps[scene['log_token']] = map_data
 
     def __len__(self):
         return len(self.nusc.seq_indices)
     
     def __getitem__(self, index):
-        seq_idx = self.nusc.seq_indices[index][0]
+        seq_idx, frame_idx = self.nusc.seq_indices[index]
         scene_idx = self.nusc.seqs[seq_idx]
-        scene = self.nusc.scene[scene_idx]
-        map_ = self.maps[scene['log_token']]
-        ego_pose = self.nusc.get_ego_pose(index)
-        cam_front_in_world = np.linalg.inv(self.nusc.get_world_to_cam_front(index))[:3, 3]
-        patch_box = (cam_front_in_world[0], cam_front_in_world[1], self.map_size//2, self.map_size//2)
-        ypr_rad = Quaternion(ego_pose['rotation']).yaw_pitch_roll
-        patch_angle = math.degrees(ypr_rad[0])
-        canvas_size = (self.canvas_size, self.canvas_size)
-        map_mask = map_.get_map_mask(patch_box, patch_angle, list(self.nusc.bev_colors.keys()), canvas_size)
+        map_mask_path = os.path.join(self.nusc.cache_dir, 'maps', f"{scene_idx}/frame_{frame_idx}.npy")
+        map_mask = np.load(map_mask_path)
         return map_mask
     
     def next_frame(self, index):
@@ -664,45 +685,48 @@ class NuScenesBev(Dataset):
             plt.close()
         plt.figure(figsize=(15, 15))
         map_mask = self[index]
-        map_img = np.ones((self.canvas_size, self.canvas_size, 3))
+        map_size = self.nusc.map_size
+        canvas_size = self.nusc.canvas_size
+        assert map_mask.shape == (len(self.nusc.bev_colors), canvas_size, canvas_size)
+        map_img = np.ones((canvas_size, canvas_size, 3))
         for i, layer_color in enumerate(self.nusc.bev_colors.values()):
             rgb_color = np.array(mcolors.hex2color(layer_color))
             map_img *= 1 - map_mask[i][:,:, None]
             map_img += map_mask[i][:,:, None] * rgb_color
         plt.imshow(map_img, origin='lower')
+        ratio = canvas_size / map_size
         if points is not None:
             # print("\tPoints:", points[:,0].min(), points[:,0].max(), points[:,1].min(), points[:,1].max(), points[:,2].min(), points[:,2].max())
-            ratio = self.canvas_size / self.map_size
-            plt.scatter(points[:, 2] * ratio + self.canvas_size//2, -points[:, 0] * ratio + self.canvas_size//2, s=0.05, c='k')
+            plt.scatter(points[:, 2] * ratio + canvas_size//2, -points[:, 0] * ratio + canvas_size//2, s=0.05, c='k')
         if splats_pos is not None:
             # print("\tSplats:", splats_pos[:,0].min(), splats_pos[:,0].max(), splats_pos[:,1].min(), splats_pos[:,1].max(), splats_pos[:,2].min(), splats_pos[:,2].max())
-            ratio = self.canvas_size / self.map_size
-            plt.scatter(splats_pos[:, 2] * ratio + self.canvas_size//2, -splats_pos[:, 0] * ratio + self.canvas_size//2, s=0.05, c='yellow', alpha=0.5)
+            plt.scatter(splats_pos[:, 2] * ratio + canvas_size//2, -splats_pos[:, 0] * ratio + canvas_size//2, s=0.05, c='yellow', alpha=0.5)
         if boxes is not None:
             for (class_name, obj_corners_in_cam_front) in boxes.values():
                 obj_corners_in_cam_front = obj_corners_in_cam_front[:, [2, 0]]
                 obj_corners_in_cam_front[:, 1] *= -1
-                corners = obj_corners_in_cam_front * ratio + self.canvas_size//2
+                corners = obj_corners_in_cam_front * ratio + canvas_size//2
                 center = corners.mean(axis=0)
                 color = np.array(self.nusc.object_colors[class_name]) / 255.0
                 plt.plot([corners[0,0], corners[2,0], corners[6,0], corners[4,0], corners[0,0]], [corners[0,1], corners[2,1], corners[6,1], corners[4,1], corners[0,1]], c=color, linewidth=2)
                 plt.plot([(corners[0,0] + corners[2,0])/2, center[0]], [(corners[0,1] + corners[2,1])/2, center[1]], c=color, linewidth=2)
 
-        plt.xlim(0, self.canvas_size)
-        plt.ylim(0, self.canvas_size)
-        plt.xticks([0, self.canvas_size//2, self.canvas_size], [-self.map_size//2, 0, self.map_size//2])
-        plt.yticks([0, self.canvas_size//2, self.canvas_size], [-self.map_size//2, 0, self.map_size//2])
+        plt.xlim(0, canvas_size)
+        plt.ylim(0, canvas_size)
+        plt.xticks([0, canvas_size/4, canvas_size/2, canvas_size/4*3, canvas_size], [-map_size/2, -map_size/4, 0, map_size/4, map_size/2])
+        plt.yticks([0, canvas_size/4, canvas_size/2, canvas_size/4*3, canvas_size], [-map_size/2, -map_size/4, 0, map_size/4, map_size/2])
         plt.savefig("conditions.png", bbox_inches='tight')
         plt.close()
 
 class NuScenesDataset(Dataset):
-    def __init__(self, version, dataroot, splats_dir, map_size, split, N=4, keys=['cameras', 'lidar', 'bev', 'boxes', 'splats']):
+    def __init__(self, version, dataroot, splats_dir, map_size, split, N=4, keys=['cameras', 'lidar', 'bev', 'boxes', 'splats'], **kwargs):
         super().__init__()
-        self.nusc = NuScenesBase(version=version, dataroot=dataroot, split=split, N=N)
+        canvas_size = kwargs.get('canvas_size', map_size)
+        self.nusc = NuScenesBase(version=version, dataroot=dataroot, split=split, map_size=map_size, canvas_size=canvas_size, N=N, keys=keys)
         self.splats = NuScenesSplats(self.nusc, model_dir=splats_dir)
         self.cameras = NuScenesCameras(self.nusc)
         self.lidar = NuScenesLidar(self.nusc)
-        self.bev = NuScenesBev(self.nusc, map_size=map_size)
+        self.bev = NuScenesBev(self.nusc)
         self.boxes = NuScenesBoxes(self.nusc)
         self.keys = keys
 
@@ -729,7 +753,7 @@ class NuScenesDataset(Dataset):
     def vis(self, *args, **kwargs):
         self.bev.vis(*args, **kwargs)
 
-# Example Usage
+# Visualization
 # def visualize(idx, dataset):
 #     start_time = time.time()
 #     item = dataset[idx]
@@ -742,16 +766,41 @@ class NuScenesDataset(Dataset):
 #     start_time = time.time()
 #     dataset.vis(idx, imgs, points, boxes, splats_pos)
 #     print(f"Done visualization time: {time.time() - start_time:.2f}s")
-
-
 # dataset = NuScenesDataset(version='v1.0-trainval', 
 #                           dataroot='/storage_local/kwang/nuscenes/raw', 
-#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2', 
+#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2',
+#                           split="train", 
 #                           map_size=200, 
-#                           split="mini_val")
-# visualize(10, dataset)
+#                           canvas_size=200,)
+# visualize(250, dataset)
+# breakpoint()
+
+# Sparse conversion
 # from lidiff.utils.collations import splats_and_lidar_to_sparse
+# dataset = NuScenesDataset(version='v1.0-trainval', 
+#                           dataroot='/storage_local/kwang/nuscenes/raw', 
+#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2',
+#                           split="train", 
+#                           map_size=200, 
+#                           keys=['lidar', 'splats'],)
 # data = dataset[0]
 # lidar = data['lidar']
 # splats = data['splats']
-# sparse = splats_and_lidar_to_sparse(splats, lidar, 180000, 18000)
+# sparse = splats_and_lidar_to_sparse(splats, lidar, 18000) #splats_and_lidar_to_sparse(data['splats'], data['lidar'], 18000)
+# breakpoint()
+
+# Preprocess map
+# parser = argparse.ArgumentParser(description='NuScenes Dataset Preprocessing')
+# parser.add_argument('--start_idx', '-s', type=int, required=True, help='Start index for preprocessing')
+# parser.add_argument('--end_idx', '-e', type=int, required=True, help='End index for preprocessing')
+# args = parser.parse_args()
+
+# start_idx = args.start_idx
+# end_idx = args.end_idx
+# dataset = NuScenesDataset(version='v1.0-trainval', 
+#                           dataroot='/storage_local/kwang/nuscenes/raw', 
+#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2',
+#                           split=list(range(start_idx, end_idx+1)),
+#                           map_size=200, 
+#                           canvas_size=200,)
+

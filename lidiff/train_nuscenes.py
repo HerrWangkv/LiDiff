@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import yaml
 import MinkowskiEngine as ME
+import wandb
 
 import lidiff.datasets.datasets as datasets
 import lidiff.models.models as models
@@ -44,7 +45,7 @@ def main(config, weights, checkpoint, test):
     # overwrite the data path in case we have defined in the env variables
     if environ.get('TRAIN_DATABASE'):
         cfg['data']['data_dir'] = environ.get('TRAIN_DATABASE')
-
+    wandb.init(project="lidar-to-3dgs", config=cfg)
     #Load data and model
     if weights is None:
         model = models.DiffusionSplats(cfg)
@@ -69,6 +70,7 @@ def main(config, weights, checkpoint, test):
                 ckpt_cfg['data']['max_range'] = 10.
 
             cfg = ckpt_cfg
+            wandb.config.update(cfg)
 
         model = models.DiffusionSplats.load_from_checkpoint(weights, hparams=cfg)
         print(model.hparams)
@@ -94,9 +96,9 @@ def main(config, weights, checkpoint, test):
                           resume_from_checkpoint=checkpoint,
                           max_epochs= cfg['train']['max_epoch'],
                           callbacks=[lr_monitor, checkpoint_saver],
-                          check_val_every_n_epoch=5,
+                          check_val_every_n_epoch=1,
                           num_sanity_val_steps=0,
-                          limit_val_batches=0.1,#TODO: back to 0.001
+                          limit_val_batches=0.01,
                           accelerator='ddp',
                           )
     else:
@@ -106,9 +108,9 @@ def main(config, weights, checkpoint, test):
                           resume_from_checkpoint=checkpoint,
                           max_epochs= cfg['train']['max_epoch'],
                           callbacks=[lr_monitor, checkpoint_saver],
-                          check_val_every_n_epoch=5,
+                          check_val_every_n_epoch=1,
                           num_sanity_val_steps=0,
-                          limit_val_batches=0.1,#TODO: back to 0.001
+                          limit_val_batches=0.01,
                           )
 
 

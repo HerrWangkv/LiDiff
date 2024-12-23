@@ -130,14 +130,18 @@ def splats_and_lidar_to_sparse(splats, points, num_lidar_points):
     viewpoint_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd_splats, voxel_size=10.)
     splats = torch.tensor(splats)
 
-    concat_lidar = np.ceil(num_lidar_points / points.shape[0]) 
-    points = points.repeat(concat_lidar, 0)
     in_viewpoint = viewpoint_grid.check_if_included(o3d.utility.Vector3dVector(points))
     points = points[in_viewpoint]
+    concat_lidar = np.ceil(num_lidar_points / points.shape[0]) 
+    for _ in range(int(concat_lidar)):
+        points_copy = points + np.random.normal(0, 0.1, points.shape)
+        points = np.vstack([points, points_copy])
+    
     pcd_lidar = o3d.geometry.PointCloud()
     pcd_lidar.points = o3d.utility.Vector3dVector(points)
     pcd_lidar = pcd_lidar.farthest_point_down_sample(num_lidar_points)
-    points = torch.tensor(np.array(pcd_lidar.points))   
+    assert len(pcd_lidar.points) == num_lidar_points, f'Original: {points.shape[0]}, Now: {len(pcd_lidar.points)}'
+    points = torch.tensor(np.array(pcd_lidar.points))
     
     p_mean = splats[:,:3].mean(axis=0)
     p_std = splats[:,:3].std(axis=0)

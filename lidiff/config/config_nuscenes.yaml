@@ -1,5 +1,5 @@
 experiment:
-    id: prob10_5p0reg
+    id: lidiff_setting
 
 ##Data
 data:
@@ -15,7 +15,7 @@ data:
 train:
     uncond_prob: 0.1
     uncond_w: 6.
-    n_gpus: 1
+    n_gpus: 4
     num_workers: 4
     max_epoch: 20
     lr: 0.0001
@@ -28,7 +28,7 @@ diff:
     beta_func: 'linear'
     t_steps: 1000
     s_steps: 50
-    reg_weight: 5.0
+    reg_weight: 0.
 
 ##Network
 model:

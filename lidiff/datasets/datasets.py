@@ -91,7 +91,7 @@ class TemporalNuScenesDataModule(LightningDataModule):
                                    dataroot=self.cfg['data']['data_dir'], 
                                    splats_dir=self.cfg['data']['splats_dir'],
                                    map_size=map_size,
-                                   split='val',#TODO: Change to train
+                                   split='train',
                                    keys=['lidar', 'splats'],)
 
         collate = LidarSplatsCollation(num_lidar_points=self.cfg['data']['num_lidar_points'])
@@ -106,7 +106,7 @@ class TemporalNuScenesDataModule(LightningDataModule):
                                    dataroot=self.cfg['data']['data_dir'], 
                                    splats_dir=self.cfg['data']['splats_dir'],
                                    map_size=map_size,
-                                   split='val',
+                                   split='mini_val',#TODO: maybe val
                                    keys=['lidar', 'splats'],)
 
         collate = LidarSplatsCollation(num_lidar_points=self.cfg['data']['num_lidar_points'])
