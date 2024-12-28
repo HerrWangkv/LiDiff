@@ -14,6 +14,7 @@ from pytorch_lightning.core.lightning import LightningModule
 from pytorch_lightning import LightningDataModule
 from lidiff.utils.collations import *
 from lidiff.utils.metrics import ChamferDistance, PrecisionRecall
+from lidiff.utils.gsplat_utils import to_attributes
 from diffusers import DPMSolverMultistepScheduler
 
 class DiffusionPoints(LightningModule):
@@ -392,6 +393,9 @@ class DiffusionSplats(LightningModule):
         self.posterior_mean_coef1 = self.betas * torch.sqrt(self.alphas_cumprod_prev) / (1. - self.alphas_cumprod)
         self.posterior_mean_coef2 = (1. - self.alphas_cumprod_prev) * torch.sqrt(self.alphas) / (1. - self.alphas_cumprod)
         
+        # self.sampling_coef1_xyz = (1 - self.alphas) * self.sqrt_one_minus_alphas_cumprod / (self.betas + (1. - self.alphas_cumprod_prev))
+        # self.sampling_coef2_xyz = torch.sqrt(self.betas * (1. - self.alphas_cumprod_prev) / (self.betas + (1. - self.alphas_cumprod_prev)))
+        # self.sampling_coef_others = (1 - self.alphas) / torch.sqrt(1 - self.alphas_cumprod)
         # for fast sampling
         self.dpm_scheduler = DPMSolverMultistepScheduler(
                 num_train_timesteps=self.t_steps,
@@ -441,6 +445,28 @@ class DiffusionSplats(LightningModule):
 
         return x_part, x_uncond
 
+    # def p_sample_step(self, x_t, x_cond, x_uncond, t):
+    #     noise_t = self.forward(x_t, x_t.sparse(), x_uncond, t)#self.classfree_forward(x_t, x_cond, x_uncond, t)
+    #     features = x_t.F.reshape(t.shape[0],-1,14)
+    #     xyz = features[:,:,:3]
+    #     others = features[:,:,3:]
+    #     x_tm1_xyz = xyz - self.sampling_coef1_xyz[t.cpu()] * noise_t[:,:,:3] + self.sampling_coef2_xyz[t.cpu()] * torch.randn_like(xyz)
+    #     x_tm1_others = self.sqrt_recip_alphas[t.cpu()] * (others - self.sampling_coef_others[t.cpu()] * noise_t[:,:,3:]) + self.sqrt_posterior_variance[t.cpu()] * torch.randn_like(others)
+    #     x_tm1 = torch.cat((x_tm1_xyz, x_tm1_others), dim=-1)
+    #     return x_tm1
+
+    # def p_sample_loop(self, x_t, x_cond, x_uncond, gt_pts, x_mean, x_std):
+    #     for t in tqdm(range(self.t_steps - 1,0,-1)):
+    #         t_ = torch.ones(gt_pts.shape[0]).cuda().long() * t
+    #         x_t = self.p_sample_step(x_t, x_cond, x_uncond, t_)
+    #         x_t = self.points_to_tensor(x_t, x_mean, x_std)
+
+    #         # this is needed otherwise minkEngine will keep "stacking" coords maps over the x_part and x_uncond
+    #         # i.e. memory leak
+    #         x_cond, x_uncond = self.reset_partial_pcd(x_cond, x_uncond, x_mean, x_std)
+    #         torch.cuda.empty_cache()
+    #     return x_t
+
     def p_sample_loop(self, x_init, x_t, x_cond, x_uncond, gt_pts, x_mean, x_std):
         self.scheduler_to_cuda()
 
@@ -456,9 +482,6 @@ class DiffusionSplats(LightningModule):
             # i.e. memory leak
             x_cond, x_uncond = self.reset_partial_pcd(x_cond, x_uncond, x_mean, x_std)
             torch.cuda.empty_cache()
-
-        makedirs(f'{self.logger.log_dir}/generated_pcd/', exist_ok=True)
-
         return x_t
 
     def p_losses(self, y, noise):
@@ -530,6 +553,28 @@ class DiffusionSplats(LightningModule):
         torch.cuda.empty_cache()
 
         return loss
+    def generate_3dgs(self, batch:dict):
+        self.model.eval()
+        self.lidar_enc.eval()
+        with torch.no_grad():
+            gt_pts = batch['splats'].detach().cpu().numpy()
+
+            # for inference we get the partial pcd and sample the noise around the partial
+            x_init = torch.zeros_like(batch['splats'])
+            x_init[:,:,:3] = batch['points'].repeat(1,10,1)
+            x_feats = x_init + torch.randn(x_init.shape, device="cuda")
+            x_full = self.points_to_tensor(x_feats, batch['mean'], batch['std'])
+            x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
+            x_uncond = self.points_to_tensor(
+                torch.zeros_like(batch['points']), torch.zeros_like(batch['mean']), torch.zeros_like(batch['std'])
+            )
+
+            x_gen_eval = self.p_sample_loop(x_init, x_full, x_part, x_uncond, gt_pts, batch['mean'], batch['std'])
+            x_gen_eval = x_gen_eval.F.reshape((gt_pts.shape[0],-1,14))
+            x_gen_eval[:,:,3:] = to_attributes(x_gen_eval[:,:,3:])
+        mask = x_gen_eval[:,:,:3].abs() <= 100
+        mask = mask.all(dim=-1)
+        return x_gen_eval[mask].view(gt_pts.shape[0],-1, 14)
 
     def validation_step(self, batch:dict, batch_idx):
         if batch_idx != 0:
