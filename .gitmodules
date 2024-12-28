@@ -7,3 +7,6 @@
 [submodule "thirdparty/MinkowskiEngine"]
 	path = thirdparty/MinkowskiEngine
 	url = https://github.com/NVIDIA/MinkowskiEngine.git
+[submodule "thirdparty/gsplat"]
+	path = thirdparty/gsplat
+	url = https://github.com/HerrWangkv/gsplat
