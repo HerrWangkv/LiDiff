@@ -408,7 +408,7 @@ class DiffusionSplats(LightningModule):
         self.dpm_scheduler.set_timesteps(self.s_steps)
         self.scheduler_to_cuda()
 
-        self.lidar_enc = minknet.MinkGlobalEnc(in_channels=3)
+        # self.lidar_enc = minknet.MinkGlobalEnc(in_channels=3)
         self.model = minknet.MinkUNetDiff(in_channels=self.hparams['model']['dim'], out_channels=self.hparams['model']['dim'])
 
         self.chamfer_distance = ChamferDistance()
@@ -467,20 +467,20 @@ class DiffusionSplats(LightningModule):
     #         torch.cuda.empty_cache()
     #     return x_t
 
-    def p_sample_loop(self, x_init, x_t, x_cond, x_uncond, gt_pts, x_mean, x_std):
+    def p_sample_loop(self, x_init, x_t, gt_pts, x_mean, x_std):
         self.scheduler_to_cuda()
 
         for t in tqdm(range(len(self.dpm_scheduler.timesteps))):
             t = torch.ones(gt_pts.shape[0]).cuda().long() * self.dpm_scheduler.timesteps[t].cuda()
             
-            noise_t = self.classfree_forward(x_t, x_cond, x_uncond, t)
+            noise_t = self.forward(x_t, x_t.sparse(), t)
             input_noise = x_t.F.reshape(t.shape[0],-1,14) - x_init
             x_t = x_init + self.dpm_scheduler.step(noise_t, t[0], input_noise)['prev_sample']
             x_t = self.points_to_tensor(x_t, x_mean, x_std)
 
             # this is needed otherwise minkEngine will keep "stacking" coords maps over the x_part and x_uncond
             # i.e. memory leak
-            x_cond, x_uncond = self.reset_partial_pcd(x_cond, x_uncond, x_mean, x_std)
+            # x_cond, x_uncond = self.reset_partial_pcd(x_cond, x_uncond, x_mean, x_std)
             torch.cuda.empty_cache()
         return x_t
 
@@ -488,7 +488,7 @@ class DiffusionSplats(LightningModule):
         return F.mse_loss(y, noise)
 
     def forward(self, x_full, x_full_sparse, x_lidar, t):
-        lidar_feat = self.lidar_enc(x_lidar)
+        lidar_feat = None#self.lidar_enc(x_lidar)
         out = self.model(x_full, x_full_sparse, lidar_feat, t)
         torch.cuda.empty_cache()
         return out.reshape(t.shape[0],-1,self.hparams['model']['dim'])
@@ -515,7 +515,7 @@ class DiffusionSplats(LightningModule):
         # initial random noise
         torch.cuda.empty_cache()
         noise = torch.randn(batch['splats'].shape, device=self.device)
-        
+
         # sample step t
         t = torch.randint(0, self.t_steps, size=(batch['splats'].shape[0],)).cuda()
         # sample q at step t
@@ -529,33 +529,46 @@ class DiffusionSplats(LightningModule):
         x_full = self.points_to_tensor(t_sample, batch['mean'], batch['std'])
 
         # for classifier-free guidance switch between conditional and unconditional training
-        if torch.rand(1) > self.hparams['train']['uncond_prob'] or batch['splats'].shape[0] == 1:
-            x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
-        else:
-            x_part = self.points_to_tensor(
-                torch.zeros_like(batch['points']), torch.zeros_like(batch['mean']), torch.zeros_like(batch['std'])
-            )
+        # if torch.rand(1) > self.hparams['train']['uncond_prob'] or batch['splats'].shape[0] == 1:
+        #     x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
+        # else:
+        #     x_part = self.points_to_tensor(
+        #         torch.zeros_like(batch['points']), torch.zeros_like(batch['mean']), torch.zeros_like(batch['std'])
+        #     )
+        x_part = None
 
         denoise_t = self.forward(x_full, x_full.sparse(), x_part, t)
         loss_mse = self.p_losses(denoise_t, noise)
         loss_mean = (denoise_t.mean())**2
         loss_std = (denoise_t.std() - 1.)**2
         loss = loss_mse + self.hparams['diff']['reg_weight'] * (loss_mean + loss_std)
+        with torch.no_grad():
+            loss_x = F.mse_loss(denoise_t[:,:,0], noise[:,:,0])
+            loss_y = F.mse_loss(denoise_t[:,:,1], noise[:,:,1])
+            loss_z = F.mse_loss(denoise_t[:,:,2], noise[:,:,2])
+            loss_color = F.mse_loss(denoise_t[:,:,3:6], noise[:,:,3:6])
+            loss_opacity = F.mse_loss(denoise_t[:,:,6], noise[:,:,6])
+            loss_scale = F.mse_loss(denoise_t[:,:,7:10], noise[:,:,7:10])
+            loss_quat = F.mse_loss(denoise_t[:,:,10:], noise[:,:,10:])
 
-        std_noise = (denoise_t - noise)**2
-        self.log('train/loss_mse', loss_mse)
-        self.log('train/loss_mean', loss_mean)
-        self.log('train/loss_std', loss_std)
+
+        # std_noise = (denoise_t - noise)**2
+        # self.log('train/loss_mse', loss_mse)
+        # self.log('train/loss_mean', loss_mean)
+        # self.log('train/loss_std', loss_std)
         self.log('train/loss', loss)
-        self.log('train/var', std_noise.var())
-        self.log('train/std', std_noise.std())
-        wandb.log({'train/loss_mse': loss_mse, 'train/loss_mean': loss_mean, 'train/loss_std': loss_std, 'train/loss': loss, 'train/var': std_noise.var(), 'train/std': std_noise.std()})
+        # self.log('train/var', std_noise.var())
+        # self.log('train/std', std_noise.std())
+        wandb.log({'train/loss': loss, 
+                    'train/loss_x': loss_x, 'train/loss_y': loss_y, 'train/loss_z': loss_z,
+                    'train/loss_color': loss_color, 'train/loss_opacity': loss_opacity,
+                    'train/loss_scale': loss_scale, 'train/loss_quat': loss_quat})
         torch.cuda.empty_cache()
 
         return loss
     def generate_3dgs(self, batch:dict):
         self.model.eval()
-        self.lidar_enc.eval()
+        # self.lidar_enc.eval()
         with torch.no_grad():
             gt_pts = batch['splats'].detach().cpu().numpy()
 
@@ -564,12 +577,12 @@ class DiffusionSplats(LightningModule):
             x_init[:,:,:3] = batch['points'].repeat(1,10,1)
             x_feats = x_init + torch.randn(x_init.shape, device="cuda")
             x_full = self.points_to_tensor(x_feats, batch['mean'], batch['std'])
-            x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
-            x_uncond = self.points_to_tensor(
-                torch.zeros_like(batch['points']), torch.zeros_like(batch['mean']), torch.zeros_like(batch['std'])
-            )
+            # x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
+            # x_uncond = self.points_to_tensor(
+            #     torch.zeros_like(batch['points']), torch.zeros_like(batch['mean']), torch.zeros_like(batch['std'])
+            # )
 
-            x_gen_eval = self.p_sample_loop(x_init, x_full, x_part, x_uncond, gt_pts, batch['mean'], batch['std'])
+            x_gen_eval = self.p_sample_loop(x_init, x_full, gt_pts, batch['mean'], batch['std'])
             x_gen_eval = x_gen_eval.F.reshape((gt_pts.shape[0],-1,14))
             x_gen_eval[:,:,3:] = to_attributes(x_gen_eval[:,:,3:])
         mask = x_gen_eval[:,:,:3].abs() <= 100
@@ -581,7 +594,7 @@ class DiffusionSplats(LightningModule):
             return
 
         self.model.eval()
-        self.lidar_enc.eval()
+        # self.lidar_enc.eval()
         with torch.no_grad():
             gt_pts = batch['splats'].detach().cpu().numpy()
 
@@ -639,7 +652,7 @@ class DiffusionSplats(LightningModule):
 
     def test_step(self, batch:dict, batch_idx):
         self.model.eval()
-        self.lidar_enc.eval()
+        # self.lidar_enc.eval()
         with torch.no_grad():
             skip, output_paths = self.valid_paths(batch['filename'])
 

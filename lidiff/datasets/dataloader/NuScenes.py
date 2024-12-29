@@ -562,7 +562,7 @@ class NuScenesCameras(Dataset):
 
 
 class NuScenesLidar(Dataset):
-    def __init__(self, nusc, horizontal_range: List[float] = [-100, 100], vertical_range: List[float] = [-8, 2]):
+    def __init__(self, nusc, horizontal_range: List[float] = [-100, 100], vertical_range: List[float] = [-15, 5]):
         super().__init__()
         self.nusc = nusc
         self.min_distance = 1.0 # in LiDAR frame
@@ -640,10 +640,12 @@ class NuScenesBoxes(Dataset):
         return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
     
 class NuScenesSplats(Dataset):
-    def __init__(self, nusc, model_dir):
+    def __init__(self, nusc, model_dir, horizontal_range: List[float] = [-100, 100], vertical_range: List[float] = [-15, 5]):
         super().__init__()
         self.nusc = nusc
         self.model_dir = model_dir
+        self.horizontal_range = horizontal_range # in CAM_FRONT frame
+        self.vertical_range = vertical_range # in CAM_FRONT frame
 
     def __len__(self):
         return len(self.nusc.seq_indices)
@@ -662,17 +664,25 @@ class NuScenesSplats(Dataset):
         splats_path = os.path.join(self.model_dir, f'{scene_idx}', f'frame_{frame_idx}.ply')
         splats = PlyData.read(splats_path)
         x = splats['vertex']['x'] # map size
+        assert x.min() >= self.horizontal_range[0] and x.max() <= self.horizontal_range[1], f"Scene: {scene_idx}, Frame: {frame_idx}, x: {x.min()} - {x.max()}"
         y = splats['vertex']['y'] # map size
+        assert y.min() >= self.vertical_range[0] and y.max() <= self.vertical_range[1], f"Scene: {scene_idx}, Frame: {frame_idx}, y: {y.min()} - {y.max()}"
         z = splats['vertex']['z'] # map size
+        assert z.min() >= self.horizontal_range[0] and z.max() <= self.horizontal_range[1], f"Scene: {scene_idx}, Frame: {frame_idx}, z: {z.min()} - {z.max()}"
         f_dc = np.array([splats['vertex'][f'f_dc_{i}'] for i in range(3)]) 
         opacity = splats['vertex']['opacity'] 
+        assert opacity.min() >= 0 and opacity.max() <= 1, f"Scene: {scene_idx}, Frame: {frame_idx}, opacity: {opacity.min()} - {opacity.max()}"
         scale = np.array([splats['vertex'][f'scale_{i}'] for i in range(3)]) 
+        assert scale.min() >= 0, f"Scene: {scene_idx}, Frame: {frame_idx}, scale: {scale.min()} - {scale.max()}"
         rotation = np.array([splats['vertex'][f'rot_{i}'] for i in range(4)]) 
+        assert rotation[0].min() >= 0.5 and rotation[0].max() <= 1, f"Scene: {scene_idx}, Frame: {frame_idx}, rot_0: {rotation[0].min()} - {rotation[0].max()}"
+        assert rotation[1:].min() >= -1 and rotation[1:].max() <= 0.5**0.5, f"Scene: {scene_idx}, Frame: {frame_idx}, rot_1-3: {rotation[1:].min()} - {rotation[1:].max()}"
         attributes = np.vstack([x[None,:], y[None,:], z[None,:], f_dc, opacity[None,:], scale, rotation]).T
         return attributes
     
-    def render(self, index):
-        gaussian = self.load_gt(index)
+    def render(self, index, gaussian=None):
+        if gaussian is None:
+            gaussian = self.load_gt(index)
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
         cams = ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']
         for i, ax in enumerate(axes.flat):
@@ -836,7 +846,7 @@ class NuScenesDataset(Dataset):
 # dataset = NuScenesDataset(version='v1.0-trainval', 
 #                           dataroot='/storage_local/kwang/nuscenes/raw', 
 #                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-15_5',
-#                           split="train", 
+#                           split=[846], 
 #                           map_size=200, 
 #                           keys=['cameras', 'splats'],)
 # dataset.vis(0)
