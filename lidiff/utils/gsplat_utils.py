@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from plyfile import PlyData, PlyElement
+from gsplat.rendering import rasterization
 
 def to_attributes(x):
     '''
@@ -56,3 +57,40 @@ def export_ply(gaussian, out_path):
     elements[:] = list(map(tuple, gaussian))
     el = PlyElement.describe(elements, 'vertex')
     PlyData([el]).write(out_path)
+
+def render_gaussian(gaussian, extrinsics, intrinsics, width=533, height=300):
+    gaussian = torch.tensor(gaussian).float().cuda()
+    extrinsics = torch.tensor(extrinsics).float().cuda()
+    intrinsics = torch.tensor(intrinsics).float().cuda()
+    intrinsics[0] *= width / 1600
+    intrinsics[1] *= height / 900
+    assert len(gaussian.shape) == 2 and gaussian.shape[1] == 14
+    means = gaussian[:, :3]
+    f_dc = gaussian[:, 3:6]
+    opacities = gaussian[:, 6]
+    scales = gaussian[:, 7:10]
+    rotations = gaussian[:, 10:]
+
+    rgbs = torch.sigmoid(f_dc)
+    renders, _, _ = rasterization(
+        means=means,
+        quats=rotations,
+        scales=scales,
+        opacities=opacities.squeeze(),
+        colors=rgbs,
+        viewmats=torch.linalg.inv(extrinsics)[None, ...],  # [C, 4, 4]
+        Ks=intrinsics[None, ...],  # [C, 3, 3]
+        width=width,
+        height=height,
+        packed=False,
+        absgrad=True,
+        sparse_grad=False,
+        rasterize_mode="classic",
+        near_plane=0.1,
+        far_plane=10000000000.0,
+        render_mode="RGB",
+        radius_clip=0.
+    )
+    renders = torch.clamp(renders, max=1.0)
+    return renders
+

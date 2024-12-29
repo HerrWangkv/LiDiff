@@ -20,7 +20,7 @@ import open3d as o3d
 import time
 import json
 
-from lidiff.utils.gsplat_utils import normalize_attributes
+from lidiff.utils.gsplat_utils import normalize_attributes, render_gaussian
 from tqdm import tqdm
 import argparse
 
@@ -547,6 +547,19 @@ class NuScenesCameras(Dataset):
     
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
+    
+    def vis(self, index):
+        imgs = self[index]
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        for i, ax in enumerate(axes.flat):
+            img = imgs[i].transpose(1, 2, 0)
+            ax.imshow(img)
+            ax.set_title(['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT'][i])
+            ax.axis('off')
+        plt.tight_layout()
+        plt.savefig("cameras.png", bbox_inches='tight')
+        plt.close()
+
 
 class NuScenesLidar(Dataset):
     def __init__(self, nusc, horizontal_range: List[float] = [-100, 100], vertical_range: List[float] = [-8, 2]):
@@ -636,6 +649,14 @@ class NuScenesSplats(Dataset):
         return len(self.nusc.seq_indices)
     
     def __getitem__(self, index):
+        attributes = self.load_gt(index)
+        attributes[:,3:] = normalize_attributes(attributes[:,3:])
+        return attributes
+    
+    def next_frame(self, index):
+        return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
+    
+    def load_gt(self, index):
         seq_idx, frame_idx = self.nusc.seq_indices[index]
         scene_idx = self.nusc.seqs[seq_idx]
         splats_path = os.path.join(self.model_dir, f'{scene_idx}', f'frame_{frame_idx}.ply')
@@ -648,12 +669,38 @@ class NuScenesSplats(Dataset):
         scale = np.array([splats['vertex'][f'scale_{i}'] for i in range(3)]) 
         rotation = np.array([splats['vertex'][f'rot_{i}'] for i in range(4)]) 
         attributes = np.vstack([x[None,:], y[None,:], z[None,:], f_dc, opacity[None,:], scale, rotation]).T
-        attributes[:,3:] = normalize_attributes(attributes[:,3:])
         return attributes
     
-    def next_frame(self, index):
-        return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
-    
+    def render(self, index):
+        gaussian = self.load_gt(index)
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        cams = ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']
+        for i, ax in enumerate(axes.flat):
+            cam = cams[i]
+            cam_idx = self.nusc.cameras[cam]
+            calib_token = self.nusc.camera_calib_tokens[cam_idx][index]
+            calib_data = self.nusc.get('calibrated_sensor', calib_token)
+            intrinsics = np.array(calib_data['camera_intrinsic'])
+            if cam_idx == 0:
+                extrinsics = np.eye(4)
+            else:
+                cam_to_ego = np.eye(4)
+                cam_to_ego[:3, :3] = Quaternion(calib_data['rotation']).rotation_matrix
+                cam_to_ego[:3, 3] = np.array(calib_data['translation'])
+                cam_front_calib_token = self.nusc.camera_calib_tokens[0][index]
+                cam_front_calib_data = self.nusc.get('calibrated_sensor', cam_front_calib_token)
+                cam_front_to_ego = np.eye(4)
+                cam_front_to_ego[:3, :3] = Quaternion(cam_front_calib_data['rotation']).rotation_matrix
+                cam_front_to_ego[:3, 3] = np.array(cam_front_calib_data['translation'])
+                extrinsics = np.linalg.inv(cam_front_to_ego) @ cam_to_ego
+            img = render_gaussian(gaussian, extrinsics, intrinsics)
+            ax.imshow(img[0].detach().cpu().numpy())
+            ax.set_title(cam)
+            ax.axis('off')
+        plt.tight_layout()
+        plt.savefig("rendered.png", bbox_inches='tight')
+        plt.close()
+            
 class NuScenesBev(Dataset):
     def __init__(self, nusc):
         super().__init__()
@@ -672,17 +719,7 @@ class NuScenesBev(Dataset):
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
     
-    def vis(self, index, imgs=None, points=None, boxes=None, splats_pos=None):
-        if imgs is not None:
-            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-            for i, ax in enumerate(axes.flat):
-                img = imgs[i].transpose(1, 2, 0)
-                ax.imshow(img)
-                ax.set_title(['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT'][i])
-                ax.axis('off')
-            plt.tight_layout()
-            plt.savefig("cameras.png", bbox_inches='tight')
-            plt.close()
+    def vis(self, index, points=None, boxes=None, splats_pos=None):
         plt.figure(figsize=(15, 15))
         map_mask = self[index]
         map_size = self.nusc.map_size
@@ -750,30 +787,21 @@ class NuScenesDataset(Dataset):
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
 
-    def vis(self, *args, **kwargs):
-        self.bev.vis(*args, **kwargs)
+    def render(self, index):
+        self.splats.render(index)
 
-# Visualization
-# def visualize(idx, dataset):
-#     start_time = time.time()
-#     item = dataset[idx]
-#     imgs = item['cameras']
-#     points = item['lidar']
-#     boxes = item['boxes']
-#     splats_pos = item['splats']
-#     print(f"Done data sampling time: {time.time() - start_time:.2f}s")
-#     print("="*6)
-#     start_time = time.time()
-#     dataset.vis(idx, imgs, points, boxes, splats_pos)
-#     print(f"Done visualization time: {time.time() - start_time:.2f}s")
-# dataset = NuScenesDataset(version='v1.0-trainval', 
-#                           dataroot='/storage_local/kwang/nuscenes/raw', 
-#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2',
-#                           split="train", 
-#                           map_size=200, 
-#                           canvas_size=200,)
-# visualize(250, dataset)
-# breakpoint()
+    def vis(self, index):
+        if 'cameras' in self.keys:
+            self.cameras.vis(index)
+        if 'bev' in self.keys:
+            points = self.lidar[index] if 'lidar' in self.keys else None
+            boxes = self.boxes[index] if 'boxes' in self.keys else None
+            splats_pos = self.splats[index] if 'splats' in self.keys else None
+            self.bev.vis(index, points, boxes, splats_pos)
+        if 'splats' in self.keys:
+            self.splats.render(index)
+    
+
 
 # Sparse conversion
 # from lidiff.utils.collations import splats_and_lidar_to_sparse
@@ -804,3 +832,12 @@ class NuScenesDataset(Dataset):
 #                           map_size=200, 
 #                           canvas_size=200,)
 
+# Render splats
+# dataset = NuScenesDataset(version='v1.0-trainval', 
+#                           dataroot='/storage_local/kwang/nuscenes/raw', 
+#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-15_5',
+#                           split="train", 
+#                           map_size=200, 
+#                           keys=['cameras', 'splats'],)
+# dataset.vis(0)
+# breakpoint()
