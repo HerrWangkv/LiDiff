@@ -105,20 +105,25 @@ class LidarSplatsCollation:
         return
 
     def __call__(self, data):
+        indices_list = []
         splats_lst = []
         points_lst = []
         p_mean_lst = []
         p_std_lst = []
         for i in range(len(data)):
+            index = data[i]['index']
             splats = data[i]['splats']
             points = data[i]['lidar']
             splats, p_mean, p_std, points = splats_and_lidar_to_sparse(splats, points, self.num_lidar_points)
+            indices_list.append(index)
             splats_lst.append(splats)
             p_mean_lst.append(p_mean)
             p_std_lst.append(p_std)
             points_lst.append(points)
 
-        return {'splats': torch.stack(splats_lst).float(),
+        return {
+            'indices': indices_list,
+            'splats': torch.stack(splats_lst).float(),
             'mean': torch.stack(p_mean_lst).float(),
             'std': torch.stack(p_std_lst).float(),
             'points' if self.mode == 'diffusion' else 'pcd_noise': torch.stack(points_lst).float(),

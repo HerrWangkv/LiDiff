@@ -1,5 +1,5 @@
 experiment:
-    id: lidiff_setting
+    id: unconditional_known_means
 
 ##Data
 data:
@@ -32,4 +32,4 @@ diff:
 
 ##Network
 model:
-    dim: 14
+    dim: 11

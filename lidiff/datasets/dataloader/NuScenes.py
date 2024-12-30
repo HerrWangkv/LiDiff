@@ -680,9 +680,11 @@ class NuScenesSplats(Dataset):
         attributes = np.vstack([x[None,:], y[None,:], z[None,:], f_dc, opacity[None,:], scale, rotation]).T
         return attributes
     
-    def render(self, index, gaussian=None):
+    def render(self, index, gaussian=None, save_path=None):
         if gaussian is None:
             gaussian = self.load_gt(index)
+        if save_path is None:
+            save_path = "rendered.png"
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
         cams = ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']
         for i, ax in enumerate(axes.flat):
@@ -708,7 +710,7 @@ class NuScenesSplats(Dataset):
             ax.set_title(cam)
             ax.axis('off')
         plt.tight_layout()
-        plt.savefig("rendered.png", bbox_inches='tight')
+        plt.savefig(save_path, bbox_inches='tight')
         plt.close()
             
 class NuScenesBev(Dataset):
@@ -782,6 +784,7 @@ class NuScenesDataset(Dataset):
     
     def __getitem__(self, index):
         ret = {}
+        ret['index'] = index
         if 'cameras' in self.keys:
             ret['cameras'] = self.cameras[index]
         if 'lidar' in self.keys:

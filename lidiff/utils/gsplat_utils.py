@@ -24,7 +24,7 @@ def to_attributes(x):
     x[:, :, 3] = torch.clamp(x[:, :, 3] * 0.5 + 0.5, min=0, max=1)
     x[:, :, 4:7] = torch.clamp(torch.exp(x[:, :, 4:7] * 8 - 3), min=0, max=40)
     x[:, :, 7] = torch.clamp(x[:, :, 7] * 0.25 + 0.75, min=0.5, max=1)
-    x[:, :, 8:] = torch.clamp(x[:, :, 8:] * (0.5 ** 0.5), min=-0.5**0.5, max=0.5**0.5)
+    x[:, :, 8:] = torch.clamp(x[:, :, 8:] * (0.5 ** 0.5), min=-1, max=0.5**0.5)
     return x if dim == 3 else x[0]
 
 
