@@ -563,7 +563,8 @@ class DiffusionSplats(LightningModule):
         self.log('train/loss', loss)
         # self.log('train/var', std_noise.var())
         # self.log('train/std', std_noise.std())
-        wandb.log({'train/loss': loss, 
+        if self.hparams['log']['wandb']:
+            wandb.log({'train/loss': loss, 
                     # 'train/loss_x': loss_x, 'train/loss_y': loss_y, 'train/loss_z': loss_z,
                     'train/loss_color': loss_color, 'train/loss_opacity': loss_opacity,
                     'train/loss_scale': loss_scale, 'train/loss_quat': loss_quat})
@@ -638,7 +639,9 @@ class DiffusionSplats(LightningModule):
         self.log('val/precision', pr, on_step=True)
         self.log('val/recall', re, on_step=True)
         self.log('val/fscore', f1, on_step=True)
-        wandb.log({'val/cd_mean': cd_mean, 'val/cd_std': cd_std, 'val/precision': pr, 'val/recall': re, 'val/fscore': f1})
+
+        if self.hparams['log']['wandb']:
+            wandb.log({'val/cd_mean': cd_mean, 'val/cd_std': cd_std, 'val/precision': pr, 'val/recall': re, 'val/fscore': f1})
         torch.cuda.empty_cache()
 
         return {'val/cd_mean': cd_mean, 'val/cd_std': cd_std, 'val/precision': pr, 'val/recall': re, 'val/fscore': f1}

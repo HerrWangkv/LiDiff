@@ -652,8 +652,10 @@ class NuScenesSplats(Dataset):
     
     def __getitem__(self, index):
         attributes = self.load_gt(index)
-        attributes[:,3:] = normalize_attributes(attributes[:,3:])
-        return attributes
+        ret = np.zeros((attributes.shape[0], 16))
+        ret[:,:3] = attributes[:,:3]
+        ret[:,3:] = normalize_attributes(attributes[:,3:])
+        return ret
     
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None

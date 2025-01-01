@@ -82,7 +82,8 @@ def main(config, weights):
     export_ply(gen_gs, gs_path)
     val_loader.dataset.splats.render(batch_idx, gen_gs, render_path)
     gt_gs = gt_gs[0]
-    gt_gs[:,3:] = to_attributes(gt_gs[:,3:])
+    attributes = to_attributes(gt_gs[:,3:])
+    gt_gs = torch.cat([gt_gs[:,:3], attributes], dim=1)
     gt_gs_path = join(gs_dir, "gt.ply")
     gt_render_path = join(gs_dir, "gt_render.png")
     export_ply(gt_gs, gt_gs_path)

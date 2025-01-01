@@ -45,7 +45,9 @@ def main(config, weights, checkpoint, test):
     # overwrite the data path in case we have defined in the env variables
     if environ.get('TRAIN_DATABASE'):
         cfg['data']['data_dir'] = environ.get('TRAIN_DATABASE')
-    wandb.init(project="lidar-to-3dgs", config=cfg)
+    
+    if cfg['log']['wandb']:
+        wandb.init(project="lidar-to-3dgs", config=cfg)
     #Load data and model
     if weights is None:
         model = models.DiffusionSplats(cfg)
@@ -70,7 +72,8 @@ def main(config, weights, checkpoint, test):
                 ckpt_cfg['data']['max_range'] = 10.
 
             cfg = ckpt_cfg
-            wandb.config.update(cfg)
+            if cfg['log']['wandb']:
+                wandb.config.update(cfg)
 
         model = models.DiffusionSplats.load_from_checkpoint(weights, hparams=cfg)
         print(model.hparams)
