@@ -64,30 +64,31 @@ def main(config, weights):
     dataloaders = datasets.dataloaders[cfg['data']['dataloader']](cfg)
     val_loader = dataloaders.val_dataloader()
     val_iter = iter(val_loader)
-    batch = next(val_iter)
-    for k in batch.keys():
-        if isinstance(batch[k], torch.Tensor):
-            batch[k] = batch[k].cuda()
+    for i in range(10):
+        batch = next(val_iter)
+        for k in batch.keys():
+            if isinstance(batch[k], torch.Tensor):
+                batch[k] = batch[k].cuda()
 
-    gen_gs = model.generate_3dgs(batch)
-    gt_gs = batch['splats']
-    assert len(gen_gs) == 1 and len(gt_gs) == 1
-    gen_gs = gen_gs[0]
-    checkpoint_idx = weights.split('=')[1][:2]
-    batch_idx = int(batch['indices'][0])
-    gs_dir = join(dirname(dirname(weights)), 'generated_3dgs', checkpoint_idx)
-    makedirs(gs_dir, exist_ok=True)
-    gs_path = join(gs_dir, "gen.ply")
-    render_path = join(gs_dir, "gen_render.png")
-    export_ply(gen_gs, gs_path)
-    val_loader.dataset.splats.render(batch_idx, gen_gs, render_path)
-    gt_gs = gt_gs[0]
-    attributes = to_attributes(gt_gs[:,3:])
-    gt_gs = torch.cat([gt_gs[:,:3], attributes], dim=1)
-    gt_gs_path = join(gs_dir, "gt.ply")
-    gt_render_path = join(gs_dir, "gt_render.png")
-    export_ply(gt_gs, gt_gs_path)
-    val_loader.dataset.splats.render(batch_idx, gt_gs, gt_render_path)
+        gen_gs = model.generate_3dgs(batch)
+        gt_gs = batch['splats']
+        assert len(gen_gs) == 1 and len(gt_gs) == 1
+        gen_gs = gen_gs[0]
+        checkpoint_idx = weights.split('=')[1][:2]
+        batch_idx = int(batch['indices'][0])
+        gs_dir = join(dirname(dirname(weights)), 'generated_3dgs', checkpoint_idx)
+        makedirs(gs_dir, exist_ok=True)
+        # gs_path = join(gs_dir, "gen.ply")
+        render_path = join(gs_dir, f"gen_render_{i}.png")
+        # export_ply(gen_gs, gs_path)
+        val_loader.dataset.splats.render(batch_idx, gen_gs, render_path)
+        gt_gs = gt_gs[0]
+        attributes = to_attributes(gt_gs[:,3:])
+        gt_gs = torch.cat([gt_gs[:,:3], attributes], dim=1)
+        # gt_gs_path = join(gs_dir, "gt.ply")
+        gt_render_path = join(gs_dir, f"gt_render_{i}.png")
+        # export_ply(gt_gs, gt_gs_path)
+        val_loader.dataset.splats.render(batch_idx, gt_gs, gt_render_path)
 
     
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ def main(config, weights, checkpoint, test):
         cfg['data']['data_dir'] = environ.get('TRAIN_DATABASE')
     
     if cfg['log']['wandb']:
-        wandb.init(project="lidar-to-3dgs", config=cfg)
+        wandb.init(project="opacity_only", config=cfg)
     #Load data and model
     if weights is None:
         model = models.DiffusionSplats(cfg)

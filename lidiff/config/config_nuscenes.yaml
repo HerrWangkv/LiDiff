@@ -1,11 +1,11 @@
 experiment:
-    id: unconditional_known_means
+    id: unconditional_only_opacity_unknown
 
 ##Data
 data:
     data_dir: '/storage_local/kwang/nuscenes/raw'
     splats_dir: '/storage_local/kwang/nuscenes/framewise/'
-    resolution: 0.05
+    resolution: 0.01
     dataloader: 'NuScenes'
     num_lidar_points: 18000
     horizontal_range: [-100., 100.]
@@ -32,7 +32,8 @@ diff:
 
 ##Network
 model:
-    dim: 13
+    in_dim: 16
+    out_dim: 1
 
 log:
     wandb: True

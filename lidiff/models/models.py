@@ -395,7 +395,7 @@ class DiffusionSplats(LightningModule):
         
         # self.sampling_coef1_xyz = (1 - self.alphas) * self.sqrt_one_minus_alphas_cumprod / (self.betas + (1. - self.alphas_cumprod_prev))
         # self.sampling_coef2_xyz = torch.sqrt(self.betas * (1. - self.alphas_cumprod_prev) / (self.betas + (1. - self.alphas_cumprod_prev)))
-        # self.sampling_coef_others = (1 - self.alphas) / torch.sqrt(1 - self.alphas_cumprod)
+        self.sampling_coef_others = (1 - self.alphas) / torch.sqrt(1 - self.alphas_cumprod)
         # for fast sampling
         self.dpm_scheduler = DPMSolverMultistepScheduler(
                 num_train_timesteps=self.t_steps,
@@ -409,7 +409,7 @@ class DiffusionSplats(LightningModule):
         self.scheduler_to_cuda()
 
         # self.lidar_enc = minknet.MinkGlobalEnc(in_channels=3)
-        self.model = minknet.MinkUNetDiff(in_channels=self.hparams['model']['dim'], out_channels=self.hparams['model']['dim'])
+        self.model = minknet.MinkUNetDiff(in_channels=self.hparams['model']['in_dim'], out_channels=self.hparams['model']['out_dim'])
 
         self.chamfer_distance = ChamferDistance()
         self.precision_recall = PrecisionRecall(self.hparams['data']['resolution'],2*self.hparams['data']['resolution'],100)
@@ -445,25 +445,28 @@ class DiffusionSplats(LightningModule):
 
         return x_part, x_uncond
 
-    # def p_sample_step(self, x_t, x_cond, x_uncond, t):
-    #     noise_t = self.forward(x_t, x_t.sparse(), x_uncond, t)#self.classfree_forward(x_t, x_cond, x_uncond, t)
-    #     features = x_t.F.reshape(t.shape[0],-1,self.hparams['model']['dim'])
-    #     xyz = features[:,:,:3]
-    #     others = features[:,:,3:]
-    #     x_tm1_xyz = xyz - self.sampling_coef1_xyz[t.cpu()] * noise_t[:,:,:3] + self.sampling_coef2_xyz[t.cpu()] * torch.randn_like(xyz)
-    #     x_tm1_others = self.sqrt_recip_alphas[t.cpu()] * (others - self.sampling_coef_others[t.cpu()] * noise_t[:,:,3:]) + self.sqrt_posterior_variance[t.cpu()] * torch.randn_like(others)
-    #     x_tm1 = torch.cat((x_tm1_xyz, x_tm1_others), dim=-1)
+    # def p_sample_step(self, x_t, t):
+    #     noise_t = self.forward(x_t, x_t.sparse(), None, t)#self.classfree_forward(x_t, x_cond, x_uncond, t)
+    #     features = x_t.F.reshape(t.shape[0],-1,self.hparams['model']['in_dim'])
+    #     # xyz = features[:,:,:3]
+    #     # others = features[:,:,3:]
+    #     # x_tm1_xyz = xyz - self.sampling_coef1_xyz[t.cpu()] * noise_t[:,:,:3] + self.sampling_coef2_xyz[t.cpu()] * torch.randn_like(xyz)
+    #     # x_tm1_others = self.sqrt_recip_alphas[t.cpu()] * (others - self.sampling_coef_others[t.cpu()] * noise_t[:,:,3:]) + self.sqrt_posterior_variance[t.cpu()] * torch.randn_like(others)
+    #     # x_tm1 = torch.cat((x_tm1_xyz, x_tm1_others), dim=-1)
+    #     colors = features[:,:,3:6]
+    #     colors = self.sqrt_recip_alphas[t.cpu()] * (colors - self.sampling_coef_others[t.cpu()] * noise_t) + self.sqrt_posterior_variance[t.cpu()] * torch.randn_like(colors)
+    #     x_tm1 = torch.cat((features[:,:,:3], colors, features[:,:,6:]), dim=-1)
     #     return x_tm1
 
-    # def p_sample_loop(self, x_t, x_cond, x_uncond, gt_pts, x_mean, x_std):
+    # def p_sample_loop(self, x_init, x_t, gt_pts, x_mean, x_std):
     #     for t in tqdm(range(self.t_steps - 1,0,-1)):
     #         t_ = torch.ones(gt_pts.shape[0]).cuda().long() * t
-    #         x_t = self.p_sample_step(x_t, x_cond, x_uncond, t_)
+    #         x_t = self.p_sample_step(x_t, t_)
     #         x_t = self.points_to_tensor(x_t, x_mean, x_std)
 
     #         # this is needed otherwise minkEngine will keep "stacking" coords maps over the x_part and x_uncond
     #         # i.e. memory leak
-    #         x_cond, x_uncond = self.reset_partial_pcd(x_cond, x_uncond, x_mean, x_std)
+    #         # x_cond, x_uncond = self.reset_partial_pcd(x_cond, x_uncond, x_mean, x_std)
     #         torch.cuda.empty_cache()
     #     return x_t
 
@@ -474,10 +477,10 @@ class DiffusionSplats(LightningModule):
             t = torch.ones(gt_pts.shape[0]).cuda().long() * self.dpm_scheduler.timesteps[t].cuda()
             
             noise_t = self.forward(x_t, x_t.sparse(), None, t)
-            input_noise = x_t.F.reshape(t.shape[0],-1,self.hparams['model']['dim']) - x_init[:,:,3:]
-            tmp = x_init
-            tmp[:,:,3:] += self.dpm_scheduler.step(noise_t, t[0], input_noise)['prev_sample']
-            x_t = self.points_to_tensor(tmp, x_mean, x_std)
+            input_noise = x_t.F.reshape(t.shape[0],-1,self.hparams['model']['in_dim'])[:,:,6:6+self.hparams['model']['out_dim']] - x_init[:,:,6:6+self.hparams['model']['out_dim']]
+            x_t = torch.tensor(x_init)
+            x_t[:,:,6:6+self.hparams['model']['out_dim']] += self.dpm_scheduler.step(noise_t, t[0], input_noise)['prev_sample']
+            x_t = self.points_to_tensor(x_t, x_mean, x_std)
 
             # this is needed otherwise minkEngine will keep "stacking" coords maps over the x_part and x_uncond
             # i.e. memory leak
@@ -492,7 +495,7 @@ class DiffusionSplats(LightningModule):
         lidar_feat = None#self.lidar_enc(x_lidar)
         out = self.model(x_full, x_full_sparse, lidar_feat, t)
         torch.cuda.empty_cache()
-        return out.reshape(t.shape[0],-1,self.hparams['model']['dim'])
+        return out.reshape(t.shape[0],-1,self.hparams['model']['out_dim'])
 
     def points_to_tensor(self, x_feats, mean, std):
         x_feats = ME.utils.batched_coordinates(list(x_feats[:]), dtype=torch.float32, device=self.device)
@@ -501,7 +504,7 @@ class DiffusionSplats(LightningModule):
         x_coord[:,1:] = feats_to_coord(x_coord[:,1:], self.hparams['data']['resolution'], mean, std)
 
         x_t = ME.TensorField(
-            features=x_feats[:,4:],
+            features=x_feats[:,1:],
             coordinates=x_coord,
             quantization_mode=ME.SparseTensorQuantizationMode.UNWEIGHTED_AVERAGE,
             minkowski_algorithm=ME.MinkowskiAlgorithm.SPEED_OPTIMIZED,
@@ -515,16 +518,17 @@ class DiffusionSplats(LightningModule):
     def training_step(self, batch:dict, batch_idx):
         # initial random noise
         torch.cuda.empty_cache()
-        noise = torch.randn([batch['splats'].shape[0], batch['splats'].shape[1], self.hparams['model']['dim']], device=self.device) 
+        noise = torch.randn([batch['splats'].shape[0], batch['splats'].shape[1], self.hparams['model']['out_dim']], device=self.device) 
 
         # sample step t
         t = torch.randint(0, self.t_steps, size=(batch['splats'].shape[0],)).cuda()
         # sample q at step t
         # For means: we sample noise towards zero to then add to each point the noise (without normalizing the pcd)
-        t_means = batch['splats'][:,:,:3]# + self.q_sample(torch.zeros_like(batch['splats'][:,:,:3]), t, noise[:,:,:3])
+        t_means = batch['splats'][:,:,:6]# + self.q_sample(torch.zeros_like(batch['splats'][:,:,:3]), t, noise[:,:,:3])
         # For other attributes: we sample noise regularly
-        t_attrs = self.q_sample(batch['splats'][:,:,3:], t, noise)
-        t_sample = torch.cat((t_means, t_attrs), dim=-1)
+        t_opacities = self.q_sample(batch['splats'][:,:,6:6+self.hparams['model']['out_dim']], t, noise)
+        t_other_attributes = batch['splats'][:,:,6+self.hparams['model']['out_dim']:]
+        t_sample = torch.cat((t_means, t_opacities, t_other_attributes), dim=-1)
 
         # replace the original points with the noise sampled
         x_full = self.points_to_tensor(t_sample, batch['mean'], batch['std'])
@@ -543,7 +547,7 @@ class DiffusionSplats(LightningModule):
         # loss_mean = (denoise_t.mean())**2
         # loss_std = (denoise_t.std() - 1.)**2
         loss = loss_mse# + self.hparams['diff']['reg_weight'] * (loss_mean + loss_std)
-        with torch.no_grad():
+        # with torch.no_grad():
             # loss_x = F.mse_loss(denoise_t[:,:,0], noise[:,:,0])
             # loss_y = F.mse_loss(denoise_t[:,:,1], noise[:,:,1])
             # loss_z = F.mse_loss(denoise_t[:,:,2], noise[:,:,2])
@@ -551,10 +555,10 @@ class DiffusionSplats(LightningModule):
             # loss_opacity = F.mse_loss(denoise_t[:,:,6], noise[:,:,6])
             # loss_scale = F.mse_loss(denoise_t[:,:,7:10], noise[:,:,7:10])
             # loss_quat = F.mse_loss(denoise_t[:,:,10:], noise[:,:,10:])
-            loss_color = F.mse_loss(denoise_t[:,:,:3], noise[:,:,:3])
-            loss_opacity = F.mse_loss(denoise_t[:,:,3], noise[:,:,3])
-            loss_scale = F.mse_loss(denoise_t[:,:,4:7], noise[:,:,4:7])
-            loss_quat = F.mse_loss(denoise_t[:,:,7:], noise[:,:,7:])
+            # loss_color = F.mse_loss(denoise_t[:,:,:3], noise[:,:,:3])
+            # loss_opacity = F.mse_loss(denoise_t[:,:,3], noise[:,:,3])
+            # loss_scale = F.mse_loss(denoise_t[:,:,4:7], noise[:,:,4:7])
+            # loss_quat = F.mse_loss(denoise_t[:,:,7:], noise[:,:,7:])
 
         # std_noise = (denoise_t - noise)**2
         # self.log('train/loss_mse', loss_mse)
@@ -566,8 +570,9 @@ class DiffusionSplats(LightningModule):
         if self.hparams['log']['wandb']:
             wandb.log({'train/loss': loss, 
                     # 'train/loss_x': loss_x, 'train/loss_y': loss_y, 'train/loss_z': loss_z,
-                    'train/loss_color': loss_color, 'train/loss_opacity': loss_opacity,
-                    'train/loss_scale': loss_scale, 'train/loss_quat': loss_quat})
+                    # 'train/loss_color': loss_color, 'train/loss_opacity': loss_opacity,
+                    # 'train/loss_scale': loss_scale, 'train/loss_quat': loss_quat
+                    })
         torch.cuda.empty_cache()
 
         return loss
@@ -578,10 +583,11 @@ class DiffusionSplats(LightningModule):
             gt_pts = batch['splats'].detach().cpu().numpy()
 
             # for inference we get the partial pcd and sample the noise around the partial
-            x_init = torch.zeros_like(batch['splats'])
-            x_init[:,:,:3] = batch['splats'][:,:,:3]#batch['points'].repeat(1,10,1)
+            x_init = torch.tensor(batch['splats'])
+            x_init[:,:,6:6+self.hparams['model']['out_dim']] = 0
             noise = torch.randn(x_init.shape, device="cuda")
-            noise[:,:,:3] = 0
+            noise[:,:,:6] = 0
+            noise[:,:,6+self.hparams['model']['out_dim']:] = 0
             x_feats = x_init + noise
             x_full = self.points_to_tensor(x_feats, batch['mean'], batch['std'])
             # x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
@@ -590,9 +596,9 @@ class DiffusionSplats(LightningModule):
             # )
 
             x_gen_eval = self.p_sample_loop(x_init, x_full, gt_pts, batch['mean'], batch['std'])
-            x_gen_eval = x_gen_eval.F.reshape((gt_pts.shape[0],-1,self.hparams['model']['dim']))
-            x_gen_eval = to_attributes(x_gen_eval)
-            gs = torch.cat([batch['splats'][:,:,:3], x_gen_eval], dim=-1)
+            x_gen_eval = x_gen_eval.F.reshape((gt_pts.shape[0],-1,self.hparams['model']['in_dim']))
+            attributes = to_attributes(x_gen_eval[:,:,3:])
+            gs = torch.cat([batch['splats'][:,:,:3], attributes], dim=-1)
         return gs           
 
     def validation_step(self, batch:dict, batch_idx):
@@ -605,10 +611,11 @@ class DiffusionSplats(LightningModule):
             gt_pts = batch['splats'].detach().cpu().numpy()
 
             # for inference we get the partial pcd and sample the noise around the partial
-            x_init = torch.zeros_like(batch['splats'])
-            x_init[:,:,:3] = batch['splats'][:,:,:3]#batch['points'].repeat(1,10,1)
+            x_init = torch.tensor(batch['splats'])
+            x_init[:,:,6:6+self.hparams['model']['out_dim']] = 0
             noise = torch.randn(x_init.shape, device="cuda")
-            noise[:,:,:3] = 0
+            noise[:,:,:6] = 0
+            noise[:,:,6+self.hparams['model']['out_dim']:] = 0
             x_feats = x_init + noise
             x_full = self.points_to_tensor(x_feats, batch['mean'], batch['std'])
             # x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
@@ -617,7 +624,7 @@ class DiffusionSplats(LightningModule):
             # )
 
             x_gen_eval = self.p_sample_loop(x_init, x_full, gt_pts, batch['mean'], batch['std'])
-            x_gen_eval = x_gen_eval.F.reshape((gt_pts.shape[0],-1,self.hparams['model']['dim']))
+            x_gen_eval = x_gen_eval.F.reshape((gt_pts.shape[0],-1,self.hparams['model']['in_dim']))
 
             for i in range(len(batch['splats'])):
                 pcd_pred = o3d.geometry.PointCloud()
