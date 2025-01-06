@@ -1,5 +1,5 @@
 experiment:
-    id: unconditional_only_opacity_unknown
+    id: unconditional_only_color_unknown_0.01
 
 ##Data
 data:
@@ -15,11 +15,11 @@ data:
 train:
     uncond_prob: 0.1
     uncond_w: 6.
-    n_gpus: 4
+    n_gpus: 1
     num_workers: 4
-    max_epoch: 5
+    max_epoch: 20
     lr: 0.0001
-    batch_size: 2
+    batch_size: 4
     decay_lr: 1.0e-4
 
 diff:
@@ -33,7 +33,7 @@ diff:
 ##Network
 model:
     in_dim: 16
-    out_dim: 1
+    out_dim: 3
 
 log:
     wandb: True

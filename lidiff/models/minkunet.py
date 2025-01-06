@@ -183,7 +183,7 @@ class MinkUNetDiff(nn.Module):
         )
 
         self.stage1 = nn.Sequential(
-            BasicConvolutionBlock(cs[0], cs[0], ks=2, stride=2, dilation=1, D=self.D),
+            BasicConvolutionBlock(cs[0], cs[0], ks=4, stride=4, dilation=1, D=self.D),
             ResidualBlock(cs[0], cs[1], ks=3, stride=1, dilation=1, D=self.D),
             ResidualBlock(cs[1], cs[1], ks=3, stride=1, dilation=1, D=self.D),
         )
@@ -209,7 +209,7 @@ class MinkUNetDiff(nn.Module):
         )
 
         self.stage2 = nn.Sequential(
-            BasicConvolutionBlock(cs[1], cs[1], ks=2, stride=2, dilation=1, D=self.D),
+            BasicConvolutionBlock(cs[1], cs[1], ks=4, stride=4, dilation=1, D=self.D),
             ResidualBlock(cs[1], cs[2], ks=3, stride=1, dilation=1, D=self.D),
             ResidualBlock(cs[2], cs[2], ks=3, stride=1, dilation=1, D=self.D)
         )
@@ -235,7 +235,7 @@ class MinkUNetDiff(nn.Module):
         )
 
         self.stage3 = nn.Sequential(
-            BasicConvolutionBlock(cs[2], cs[2], ks=2, stride=2, dilation=1, D=self.D),
+            BasicConvolutionBlock(cs[2], cs[2], ks=4, stride=4, dilation=1, D=self.D),
             ResidualBlock(cs[2], cs[3], ks=3, stride=1, dilation=1, D=self.D),
             ResidualBlock(cs[3], cs[3], ks=3, stride=1, dilation=1, D=self.D),
         )
@@ -261,7 +261,7 @@ class MinkUNetDiff(nn.Module):
         )
 
         self.stage4 = nn.Sequential(
-            BasicConvolutionBlock(cs[3], cs[3], ks=2, stride=2, dilation=1, D=self.D),
+            BasicConvolutionBlock(cs[3], cs[3], ks=4, stride=4, dilation=1, D=self.D),
             ResidualBlock(cs[3], cs[4], ks=3, stride=1, dilation=1, D=self.D),
             ResidualBlock(cs[4], cs[4], ks=3, stride=1, dilation=1, D=self.D),
         )
@@ -287,7 +287,7 @@ class MinkUNetDiff(nn.Module):
         )
 
         self.up1 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[4], cs[5], ks=2, stride=2, D=self.D),
+            BasicDeconvolutionBlock(cs[4], cs[5], ks=4, stride=4, D=self.D),
             nn.Sequential(
                 ResidualBlock(cs[5] + cs[3], cs[5], ks=3, stride=1,
                               dilation=1, D=self.D),
@@ -316,7 +316,7 @@ class MinkUNetDiff(nn.Module):
         )
 
         self.up2 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[5], cs[6], ks=2, stride=2, D=self.D),
+            BasicDeconvolutionBlock(cs[5], cs[6], ks=4, stride=4, D=self.D),
             nn.Sequential(
                 ResidualBlock(cs[6] + cs[2], cs[6], ks=3, stride=1,
                               dilation=1, D=self.D),
@@ -345,7 +345,7 @@ class MinkUNetDiff(nn.Module):
         )
 
         self.up3 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[6], cs[7], ks=2, stride=2, D=self.D),
+            BasicDeconvolutionBlock(cs[6], cs[7], ks=4, stride=4, D=self.D),
             nn.Sequential(
                 ResidualBlock(cs[7] + cs[1], cs[7], ks=3, stride=1,
                               dilation=1, D=self.D),
@@ -374,7 +374,7 @@ class MinkUNetDiff(nn.Module):
         )
 
         self.up4 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[7], cs[8], ks=2, stride=2, D=self.D),
+            BasicDeconvolutionBlock(cs[7], cs[8], ks=4, stride=4, D=self.D),
             nn.Sequential(
                 ResidualBlock(cs[8] + cs[0], cs[8], ks=3, stride=1,
                               dilation=1, D=self.D),
@@ -430,6 +430,7 @@ class MinkUNetDiff(nn.Module):
         temp_emb = self.get_timestep_embedding(t)
 
         x0 = self.stem(x_sparse)
+        # print(x0.F.shape)
         # match0 = self.match_part_to_full(x0, part_feats)
         # p0 = self.latent_stage1(match0) 
         t0 = self.stage1_temp(temp_emb)
@@ -438,6 +439,7 @@ class MinkUNetDiff(nn.Module):
         w0 = self.latemp_stage1(t0)#torch.cat((p0,t0),-1))
 
         x1 = self.stage1(x0*w0)
+        # print(x1.F.shape)
         # match1 = self.match_part_to_full(x1, part_feats)
         # p1 = self.latent_stage2(match1) 
         t1 = self.stage2_temp(temp_emb)
@@ -446,6 +448,7 @@ class MinkUNetDiff(nn.Module):
         w1 = self.latemp_stage2(t1)#torch.cat((p1,t1),-1))
 
         x2 = self.stage2(x1*w1)
+        # print(x2.F.shape)
         # match2 = self.match_part_to_full(x2, part_feats)
         # p2 = self.latent_stage3(match2) 
         t2 = self.stage3_temp(temp_emb)
@@ -454,6 +457,7 @@ class MinkUNetDiff(nn.Module):
         w2 = self.latemp_stage3(t2)#torch.cat((p2,t2),-1))
 
         x3 = self.stage3(x2*w2)
+        # print(x3.F.shape)
         # match3 = self.match_part_to_full(x3, part_feats)
         # p3 = self.latent_stage4(match3) 
         t3 = self.stage4_temp(temp_emb)
@@ -462,6 +466,7 @@ class MinkUNetDiff(nn.Module):
         w3 = self.latemp_stage4(t3)#torch.cat((p3,t3),-1))
 
         x4 = self.stage4(x3*w3)
+        # print(x4.F.shape)
         # match4 = self.match_part_to_full(x4, part_feats)
         # p4 = self.latent_up1(match4) 
         t4 = self.up1_temp(temp_emb)
@@ -470,6 +475,7 @@ class MinkUNetDiff(nn.Module):
         w4 = self.latemp_up1(t4)#torch.cat((t4,p4),-1))
 
         y1 = self.up1[0](x4*w4)
+        # print(y1.F.shape)
         y1 = ME.cat(y1, x3)
         y1 = self.up1[1](y1)
         # match5 = self.match_part_to_full(y1, part_feats)
@@ -480,6 +486,7 @@ class MinkUNetDiff(nn.Module):
         w5 = self.latemp_up2(t5)#torch.cat((p5,t5),-1))
 
         y2 = self.up2[0](y1*w5)
+        # print(y2.F.shape)
         y2 = ME.cat(y2, x2)
         y2 = self.up2[1](y2)
         # match6 = self.match_part_to_full(y2, part_feats)
@@ -490,6 +497,7 @@ class MinkUNetDiff(nn.Module):
         w6 = self.latemp_up3(t6)#torch.cat((p6,t6),-1))       
 
         y3 = self.up3[0](y2*w6)
+        # print(y3.F.shape)
         y3 = ME.cat(y3, x1)
         y3 = self.up3[1](y3)
         # match7 = self.match_part_to_full(y3, part_feats)
@@ -500,6 +508,7 @@ class MinkUNetDiff(nn.Module):
         w7 = self.latemp_up4(t7)#torch.cat((p7,t7),-1))
         
         y4 = self.up4[0](y3*w7)
+        # print(y4.F.shape)
         y4 = ME.cat(y4, x0)
         y4 = self.up4[1](y4)
          

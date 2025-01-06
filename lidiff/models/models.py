@@ -401,7 +401,7 @@ class DiffusionSplats(LightningModule):
                 num_train_timesteps=self.t_steps,
                 beta_start=self.hparams['diff']['beta_start'],
                 beta_end=self.hparams['diff']['beta_end'],
-                beta_schedule='linear',
+                beta_schedule=self.hparams['diff']['beta_func'],
                 algorithm_type='sde-dpmsolver++',
                 solver_order=2,
         )
@@ -477,9 +477,9 @@ class DiffusionSplats(LightningModule):
             t = torch.ones(gt_pts.shape[0]).cuda().long() * self.dpm_scheduler.timesteps[t].cuda()
             
             noise_t = self.forward(x_t, x_t.sparse(), None, t)
-            input_noise = x_t.F.reshape(t.shape[0],-1,self.hparams['model']['in_dim'])[:,:,6:6+self.hparams['model']['out_dim']] - x_init[:,:,6:6+self.hparams['model']['out_dim']]
+            input_noise = x_t.F.reshape(t.shape[0],-1,self.hparams['model']['in_dim'])[:,:,3:3+self.hparams['model']['out_dim']] - x_init[:,:,3:3+self.hparams['model']['out_dim']]
             x_t = torch.tensor(x_init)
-            x_t[:,:,6:6+self.hparams['model']['out_dim']] += self.dpm_scheduler.step(noise_t, t[0], input_noise)['prev_sample']
+            x_t[:,:,3:3+self.hparams['model']['out_dim']] += self.dpm_scheduler.step(noise_t, t[0], input_noise)['prev_sample']
             x_t = self.points_to_tensor(x_t, x_mean, x_std)
 
             # this is needed otherwise minkEngine will keep "stacking" coords maps over the x_part and x_uncond
@@ -524,11 +524,11 @@ class DiffusionSplats(LightningModule):
         t = torch.randint(0, self.t_steps, size=(batch['splats'].shape[0],)).cuda()
         # sample q at step t
         # For means: we sample noise towards zero to then add to each point the noise (without normalizing the pcd)
-        t_means = batch['splats'][:,:,:6]# + self.q_sample(torch.zeros_like(batch['splats'][:,:,:3]), t, noise[:,:,:3])
+        t_means = batch['splats'][:,:,:3]# + self.q_sample(torch.zeros_like(batch['splats'][:,:,:3]), t, noise[:,:,:3])
         # For other attributes: we sample noise regularly
-        t_opacities = self.q_sample(batch['splats'][:,:,6:6+self.hparams['model']['out_dim']], t, noise)
-        t_other_attributes = batch['splats'][:,:,6+self.hparams['model']['out_dim']:]
-        t_sample = torch.cat((t_means, t_opacities, t_other_attributes), dim=-1)
+        t_pred = self.q_sample(batch['splats'][:,:,3:3+self.hparams['model']['out_dim']], t, noise)
+        t_other_attributes = batch['splats'][:,:,3+self.hparams['model']['out_dim']:]
+        t_sample = torch.cat((t_means, t_pred, t_other_attributes), dim=-1)
 
         # replace the original points with the noise sampled
         x_full = self.points_to_tensor(t_sample, batch['mean'], batch['std'])
@@ -576,6 +576,32 @@ class DiffusionSplats(LightningModule):
         torch.cuda.empty_cache()
 
         return loss
+    
+    def add_noise(self, batch:dict, t=None):
+        gt_pts = batch['splats'].detach().cpu().numpy()
+        noise = torch.randn([batch['splats'].shape[0], batch['splats'].shape[1], self.hparams['model']['out_dim']], device=self.device) 
+        if t is not None:
+            # sample step t
+            t = torch.tensor([t,]).cuda()
+            # sample q at step t
+            # For means: we sample noise towards zero to then add to each point the noise (without normalizing the pcd)
+            t_means = batch['splats'][:,:,:3]# + self.q_sample(torch.zeros_like(batch['splats'][:,:,:3]), t, noise[:,:,:3])
+            # For other attributes: we sample noise regularly
+            t_pred = self.q_sample(batch['splats'][:,:,3:3+self.hparams['model']['out_dim']], t, noise)
+            t_other_attributes = batch['splats'][:,:,3+self.hparams['model']['out_dim']:]
+            t_sample = torch.cat((t_means, t_pred, t_other_attributes), dim=-1)
+
+            # replace the original points with the noise sampled
+            x_full = self.points_to_tensor(t_sample, batch['mean'], batch['std'])
+            
+            x_gen_eval = x_full.F.reshape((gt_pts.shape[0],-1,self.hparams['model']['in_dim']))
+        else:
+            x_gen_eval = batch['splats'].clone()
+            x_gen_eval[:,:,3:3+self.hparams['model']['out_dim']] = noise
+        attributes = to_attributes(x_gen_eval[:,:,3:])
+        gs = torch.cat([batch['splats'][:,:,:3], attributes], dim=-1)
+        return gs           
+    
     def generate_3dgs(self, batch:dict):
         self.model.eval()
         # self.lidar_enc.eval()
@@ -584,10 +610,10 @@ class DiffusionSplats(LightningModule):
 
             # for inference we get the partial pcd and sample the noise around the partial
             x_init = torch.tensor(batch['splats'])
-            x_init[:,:,6:6+self.hparams['model']['out_dim']] = 0
+            x_init[:,:,3:3+self.hparams['model']['out_dim']] = 0
             noise = torch.randn(x_init.shape, device="cuda")
-            noise[:,:,:6] = 0
-            noise[:,:,6+self.hparams['model']['out_dim']:] = 0
+            noise[:,:,:3] = 0
+            noise[:,:,3+self.hparams['model']['out_dim']:] = 0
             x_feats = x_init + noise
             x_full = self.points_to_tensor(x_feats, batch['mean'], batch['std'])
             # x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
@@ -612,10 +638,10 @@ class DiffusionSplats(LightningModule):
 
             # for inference we get the partial pcd and sample the noise around the partial
             x_init = torch.tensor(batch['splats'])
-            x_init[:,:,6:6+self.hparams['model']['out_dim']] = 0
+            x_init[:,:,3:3+self.hparams['model']['out_dim']] = 0
             noise = torch.randn(x_init.shape, device="cuda")
-            noise[:,:,:6] = 0
-            noise[:,:,6+self.hparams['model']['out_dim']:] = 0
+            noise[:,:,:3] = 0
+            noise[:,:,3+self.hparams['model']['out_dim']:] = 0
             x_feats = x_init + noise
             x_full = self.points_to_tensor(x_feats, batch['mean'], batch['std'])
             # x_part = self.points_to_tensor(batch['points'], batch['mean'], batch['std'])
