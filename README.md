@@ -21,11 +21,17 @@ Installing python (we have used python 3.9) packages pre-requisites:
 
 `pip install -r requirements.txt`
 
+(`conda install -c conda-forge gxx_linux-64=9.3.0`)
+
 `pip install thirdparty/hdbscan`
+
+`pip install thirdparty/gsplat`
 
 `pip install thirdparty/pytorch3d`
 
 Installing MinkowskiEngine:
+
+(`cp /software/all/toolkit/Intel_OneAPI/mkl/latest/lib/intel64/libmkl_rt.so $CONDA_PREFIX/lib`)
 
 `pip install -U thirdparty/MinkowskiEngine --no-deps`
 
