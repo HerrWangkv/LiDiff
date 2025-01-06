@@ -652,7 +652,7 @@ class NuScenesSplats(Dataset):
     
     def __getitem__(self, index):
         attributes = self.load_gt(index)
-        ret = np.zeros((attributes.shape[0], 16))
+        ret = np.zeros((attributes.shape[0], 14))
         ret[:,:3] = attributes[:,:3]
         ret[:,3:] = normalize_attributes(attributes[:,3:])
         return ret

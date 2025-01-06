@@ -346,25 +346,11 @@ class DiffusionPoints(LightningModule):
         }
 
         return [optimizer], [scheduler]
-    
-class DiffusionSplats(LightningModule):
-    def __init__(self, hparams:dict, data_module: LightningDataModule = None):
-        super().__init__()
-        self.save_hyperparameters(hparams)
-        self.data_module = data_module
 
-        # alphas and betas
-        if self.hparams['diff']['beta_func'] == 'cosine':
-            self.betas = beta_func[self.hparams['diff']['beta_func']](self.hparams['diff']['t_steps'])
-        else:
-            self.betas = beta_func[self.hparams['diff']['beta_func']](
-                    self.hparams['diff']['t_steps'],
-                    self.hparams['diff']['beta_start'],
-                    self.hparams['diff']['beta_end'],
-            )
-
-        self.t_steps = self.hparams['diff']['t_steps']
-        self.s_steps = self.hparams['diff']['s_steps']
+class DiffusionParams:
+    def __init__(self, betas:torch.Tensor, t_steps:int):
+        self.betas = betas
+        self.t_steps = t_steps
         self.alphas = 1. - self.betas
         self.alphas_cumprod = torch.tensor(
             np.cumprod(self.alphas, axis=0), dtype=torch.float32, device=torch.device('cuda')
@@ -396,16 +382,103 @@ class DiffusionSplats(LightningModule):
         # self.sampling_coef1_xyz = (1 - self.alphas) * self.sqrt_one_minus_alphas_cumprod / (self.betas + (1. - self.alphas_cumprod_prev))
         # self.sampling_coef2_xyz = torch.sqrt(self.betas * (1. - self.alphas_cumprod_prev) / (self.betas + (1. - self.alphas_cumprod_prev)))
         self.sampling_coef_others = (1 - self.alphas) / torch.sqrt(1 - self.alphas_cumprod)
+        
+
+class DiffusionSplats(LightningModule):
+    def __init__(self, hparams:dict, data_module: LightningDataModule = None):
+        super().__init__()
+        self.save_hyperparameters(hparams)
+        self.data_module = data_module
+
+        # alphas and betas
+        self.color_betas = beta_func[self.hparams['diff']['color']['beta_func']](self.hparams['diff']['t_steps']) if self.hparams['diff']['color']['beta_func'] == 'cosine' else beta_func[self.hparams['diff']['color']['beta_func']](
+                self.hparams['diff']['t_steps'],
+                self.hparams['diff']['color']['beta_start'],
+                self.hparams['diff']['color']['beta_end'],
+        )
+        self.color_params = DiffusionParams(self.color_betas, self.hparams['diff']['t_steps'])
+
+        self.opacity_betas = beta_func[self.hparams['diff']['opacity']['beta_func']](self.hparams['diff']['t_steps']) if self.hparams['diff']['opacity']['beta_func'] == 'cosine' else beta_func[self.hparams['diff']['opacity']['beta_func']](
+                self.hparams['diff']['t_steps'],
+                self.hparams['diff']['opacity']['beta_start'],
+                self.hparams['diff']['opacity']['beta_end'],
+        )
+        self.opacity_params = DiffusionParams(self.opacity_betas, self.hparams['diff']['t_steps'])
+
+        self.scale_betas = beta_func[self.hparams['diff']['scale']['beta_func']](self.hparams['diff']['t_steps']) if self.hparams['diff']['scale']['beta_func'] == 'cosine' else beta_func[self.hparams['diff']['scale']['beta_func']](
+                self.hparams['diff']['t_steps'],
+                self.hparams['diff']['scale']['beta_start'],
+                self.hparams['diff']['scale']['beta_end'],
+        )
+        self.scale_params = DiffusionParams(self.scale_betas, self.hparams['diff']['t_steps'])
+
+        self.quat0_betas = beta_func[self.hparams['diff']['quat_0']['beta_func']](self.hparams['diff']['t_steps']) if self.hparams['diff']['quat_0']['beta_func'] == 'cosine' else beta_func[self.hparams['diff']['quat_0']['beta_func']](
+                self.hparams['diff']['t_steps'],
+                self.hparams['diff']['quat_0']['beta_start'],
+                self.hparams['diff']['quat_0']['beta_end'],
+        )
+        self.quat0_params = DiffusionParams(self.quat0_betas, self.hparams['diff']['t_steps'])
+
+        self.quatr_betas = beta_func[self.hparams['diff']['quat_rest']['beta_func']](self.hparams['diff']['t_steps']) if self.hparams['diff']['quat_rest']['beta_func'] == 'cosine' else beta_func[self.hparams['diff']['quat_rest']['beta_func']](
+                self.hparams['diff']['t_steps'],
+                self.hparams['diff']['quat_rest']['beta_start'],
+                self.hparams['diff']['quat_rest']['beta_end'],
+        )
+        self.quatr_params = DiffusionParams(self.quatr_betas, self.hparams['diff']['t_steps'])
+
+        self.t_steps = self.hparams['diff']['t_steps']
+        self.s_steps = self.hparams['diff']['s_steps']
+
         # for fast sampling
-        self.dpm_scheduler = DPMSolverMultistepScheduler(
+        self.color_dpm_scheduler = DPMSolverMultistepScheduler(
                 num_train_timesteps=self.t_steps,
-                beta_start=self.hparams['diff']['beta_start'],
-                beta_end=self.hparams['diff']['beta_end'],
-                beta_schedule=self.hparams['diff']['beta_func'],
+                beta_start=self.hparams['diff']['color']['beta_start'],
+                beta_end=self.hparams['diff']['color']['beta_end'],
+                beta_schedule=self.hparams['diff']['color']['beta_func'],
                 algorithm_type='sde-dpmsolver++',
                 solver_order=2,
         )
-        self.dpm_scheduler.set_timesteps(self.s_steps)
+        self.color_dpm_scheduler.set_timesteps(self.s_steps)
+
+        self.opacity_dpm_scheduler = DPMSolverMultistepScheduler(
+                num_train_timesteps=self.t_steps,
+                beta_start=self.hparams['diff']['opacity']['beta_start'],
+                beta_end=self.hparams['diff']['opacity']['beta_end'],
+                beta_schedule=self.hparams['diff']['opacity']['beta_func'],
+                algorithm_type='sde-dpmsolver++',
+                solver_order=2,
+        )
+        self.opacity_dpm_scheduler.set_timesteps(self.s_steps)
+
+        self.scale_dpm_scheduler = DPMSolverMultistepScheduler(
+                num_train_timesteps=self.t_steps,
+                beta_start=self.hparams['diff']['scale']['beta_start'],
+                beta_end=self.hparams['diff']['scale']['beta_end'],
+                beta_schedule=self.hparams['diff']['scale']['beta_func'],
+                algorithm_type='sde-dpmsolver++',
+                solver_order=2,
+        )
+        self.scale_dpm_scheduler.set_timesteps(self.s_steps)
+
+        self.quat0_dpm_scheduler = DPMSolverMultistepScheduler(
+                num_train_timesteps=self.t_steps,
+                beta_start=self.hparams['diff']['quat_0']['beta_start'],
+                beta_end=self.hparams['diff']['quat_0']['beta_end'],
+                beta_schedule=self.hparams['diff']['quat_0']['beta_func'],
+                algorithm_type='sde-dpmsolver++',
+                solver_order=2,
+        )
+        self.quat0_dpm_scheduler.set_timesteps(self.s_steps)
+
+        self.quatr_dpm_scheduler = DPMSolverMultistepScheduler(
+                num_train_timesteps=self.t_steps,
+                beta_start=self.hparams['diff']['quat_rest']['beta_start'],
+                beta_end=self.hparams['diff']['quat_rest']['beta_end'],
+                beta_schedule=self.hparams['diff']['quat_rest']['beta_func'],
+                algorithm_type='sde-dpmsolver++',
+                solver_order=2,
+        )
+        self.quatr_dpm_scheduler.set_timesteps(self.s_steps)
         self.scheduler_to_cuda()
 
         # self.lidar_enc = minknet.MinkGlobalEnc(in_channels=3)
@@ -417,18 +490,19 @@ class DiffusionSplats(LightningModule):
         self.w_uncond = self.hparams['train']['uncond_w']
 
     def scheduler_to_cuda(self):
-        self.dpm_scheduler.timesteps = self.dpm_scheduler.timesteps.cuda()
-        self.dpm_scheduler.betas = self.dpm_scheduler.betas.cuda()
-        self.dpm_scheduler.alphas = self.dpm_scheduler.alphas.cuda()
-        self.dpm_scheduler.alphas_cumprod = self.dpm_scheduler.alphas_cumprod.cuda()
-        self.dpm_scheduler.alpha_t = self.dpm_scheduler.alpha_t.cuda()
-        self.dpm_scheduler.sigma_t = self.dpm_scheduler.sigma_t.cuda()
-        self.dpm_scheduler.lambda_t = self.dpm_scheduler.lambda_t.cuda()
-        self.dpm_scheduler.sigmas = self.dpm_scheduler.sigmas.cuda()
+        for scheduler in [self.color_dpm_scheduler, self.opacity_dpm_scheduler, self.scale_dpm_scheduler, self.quat0_dpm_scheduler, self.quatr_dpm_scheduler]:
+            scheduler.timesteps = scheduler.timesteps.cuda()
+            scheduler.betas = scheduler.betas.cuda()
+            scheduler.alphas = scheduler.alphas.cuda()
+            scheduler.alphas_cumprod = scheduler.alphas_cumprod.cuda()
+            scheduler.alpha_t = scheduler.alpha_t.cuda()
+            scheduler.sigma_t = scheduler.sigma_t.cuda()
+            scheduler.lambda_t = scheduler.lambda_t.cuda()
+            scheduler.sigmas = scheduler.sigmas.cuda()
 
-    def q_sample(self, x, t, noise):
-        return self.sqrt_alphas_cumprod[t.cpu()][:,None,None].cuda() * x + \
-                self.sqrt_one_minus_alphas_cumprod[t.cpu()][:,None,None].cuda() * noise
+    def q_sample(self, x, t, param, noise):
+        return param.sqrt_alphas_cumprod[t.cpu()][:,None,None].cuda() * x + \
+                param.sqrt_one_minus_alphas_cumprod[t.cpu()][:,None,None].cuda() * noise
 
     def classfree_forward(self, x_t, x_cond, x_uncond, t):
         x_t_sparse = x_t.sparse()
@@ -473,13 +547,17 @@ class DiffusionSplats(LightningModule):
     def p_sample_loop(self, x_init, x_t, gt_pts, x_mean, x_std):
         self.scheduler_to_cuda()
 
-        for t in tqdm(range(len(self.dpm_scheduler.timesteps))):
-            t = torch.ones(gt_pts.shape[0]).cuda().long() * self.dpm_scheduler.timesteps[t].cuda()
+        for t in tqdm(range(len(self.color_dpm_scheduler.timesteps))):
+            t = torch.ones(gt_pts.shape[0]).cuda().long() * self.color_dpm_scheduler.timesteps[t].cuda()
             
             noise_t = self.forward(x_t, x_t.sparse(), None, t)
             input_noise = x_t.F.reshape(t.shape[0],-1,self.hparams['model']['in_dim'])[:,:,3:3+self.hparams['model']['out_dim']] - x_init[:,:,3:3+self.hparams['model']['out_dim']]
             x_t = torch.tensor(x_init)
-            x_t[:,:,3:3+self.hparams['model']['out_dim']] += self.dpm_scheduler.step(noise_t, t[0], input_noise)['prev_sample']
+            x_t[:,:,3:6] += self.color_dpm_scheduler.step(noise_t[:,:,:3], t[0], input_noise[:,:,:3])['prev_sample']
+            x_t[:,:,6:7] += self.opacity_dpm_scheduler.step(noise_t[:,:,3:4], t[0], input_noise[:,:,3:4])['prev_sample']
+            x_t[:,:,7:10] += self.scale_dpm_scheduler.step(noise_t[:,:,4:7], t[0], input_noise[:,:,4:7])['prev_sample']
+            x_t[:,:,10:11] += self.quat0_dpm_scheduler.step(noise_t[:,:,7:8], t[0], input_noise[:,:,7:8])['prev_sample']
+            x_t[:,:,11:] += self.quatr_dpm_scheduler.step(noise_t[:,:,8:], t[0], input_noise[:,:,8:])['prev_sample']
             x_t = self.points_to_tensor(x_t, x_mean, x_std)
 
             # this is needed otherwise minkEngine will keep "stacking" coords maps over the x_part and x_uncond
@@ -526,10 +604,12 @@ class DiffusionSplats(LightningModule):
         # For means: we sample noise towards zero to then add to each point the noise (without normalizing the pcd)
         t_means = batch['splats'][:,:,:3]# + self.q_sample(torch.zeros_like(batch['splats'][:,:,:3]), t, noise[:,:,:3])
         # For other attributes: we sample noise regularly
-        t_pred = self.q_sample(batch['splats'][:,:,3:3+self.hparams['model']['out_dim']], t, noise)
-        t_other_attributes = batch['splats'][:,:,3+self.hparams['model']['out_dim']:]
-        t_sample = torch.cat((t_means, t_pred, t_other_attributes), dim=-1)
-
+        t_color = self.q_sample(batch['splats'][:,:,3:6], t, self.color_params, noise[:,:,:3])
+        t_opacity = self.q_sample(batch['splats'][:,:,6:7], t, self.opacity_params, noise[:,:,3:4])
+        t_scale = self.q_sample(batch['splats'][:,:,7:10], t, self.scale_params, noise[:,:,4:7])
+        t_quat0 = self.q_sample(batch['splats'][:,:,10:11], t, self.quat0_params, noise[:,:,7:8])
+        t_quatr = self.q_sample(batch['splats'][:,:,11:], t, self.quatr_params, noise[:,:,8:])
+        t_sample = torch.cat((t_means, t_color, t_opacity, t_scale, t_quat0, t_quatr), dim=-1)
         # replace the original points with the noise sampled
         x_full = self.points_to_tensor(t_sample, batch['mean'], batch['std'])
 
@@ -547,7 +627,7 @@ class DiffusionSplats(LightningModule):
         # loss_mean = (denoise_t.mean())**2
         # loss_std = (denoise_t.std() - 1.)**2
         loss = loss_mse# + self.hparams['diff']['reg_weight'] * (loss_mean + loss_std)
-        # with torch.no_grad():
+        with torch.no_grad():
             # loss_x = F.mse_loss(denoise_t[:,:,0], noise[:,:,0])
             # loss_y = F.mse_loss(denoise_t[:,:,1], noise[:,:,1])
             # loss_z = F.mse_loss(denoise_t[:,:,2], noise[:,:,2])
@@ -555,10 +635,10 @@ class DiffusionSplats(LightningModule):
             # loss_opacity = F.mse_loss(denoise_t[:,:,6], noise[:,:,6])
             # loss_scale = F.mse_loss(denoise_t[:,:,7:10], noise[:,:,7:10])
             # loss_quat = F.mse_loss(denoise_t[:,:,10:], noise[:,:,10:])
-            # loss_color = F.mse_loss(denoise_t[:,:,:3], noise[:,:,:3])
-            # loss_opacity = F.mse_loss(denoise_t[:,:,3], noise[:,:,3])
-            # loss_scale = F.mse_loss(denoise_t[:,:,4:7], noise[:,:,4:7])
-            # loss_quat = F.mse_loss(denoise_t[:,:,7:], noise[:,:,7:])
+            loss_color = F.mse_loss(denoise_t[:,:,:3], noise[:,:,:3])
+            loss_opacity = F.mse_loss(denoise_t[:,:,3], noise[:,:,3])
+            loss_scale = F.mse_loss(denoise_t[:,:,4:7], noise[:,:,4:7])
+            loss_quat = F.mse_loss(denoise_t[:,:,7:], noise[:,:,7:])
 
         # std_noise = (denoise_t - noise)**2
         # self.log('train/loss_mse', loss_mse)
@@ -570,8 +650,8 @@ class DiffusionSplats(LightningModule):
         if self.hparams['log']['wandb']:
             wandb.log({'train/loss': loss, 
                     # 'train/loss_x': loss_x, 'train/loss_y': loss_y, 'train/loss_z': loss_z,
-                    # 'train/loss_color': loss_color, 'train/loss_opacity': loss_opacity,
-                    # 'train/loss_scale': loss_scale, 'train/loss_quat': loss_quat
+                    'train/loss_color': loss_color, 'train/loss_opacity': loss_opacity,
+                    'train/loss_scale': loss_scale, 'train/loss_quat': loss_quat
                     })
         torch.cuda.empty_cache()
 
@@ -580,16 +660,34 @@ class DiffusionSplats(LightningModule):
     def add_noise(self, batch:dict, t=None):
         gt_pts = batch['splats'].detach().cpu().numpy()
         noise = torch.randn([batch['splats'].shape[0], batch['splats'].shape[1], self.hparams['model']['out_dim']], device=self.device) 
-        if t is not None:
+        if t == 0:
+            print(f"Step 0: ")
+            t_sample = torch.tensor(batch['splats'])
+            torch.set_printoptions(precision=2, sci_mode=False)
+            print(t_sample[:,:,3:].mean(dim=[0,1]))
+            print(t_sample[:,:,3:].std(dim=[0,1]))
+            x_full = self.points_to_tensor(t_sample, batch['mean'], batch['std'])
+            
+            x_gen_eval = x_full.F.reshape((gt_pts.shape[0],-1,self.hparams['model']['in_dim']))
+        elif t is not None:
             # sample step t
             t = torch.tensor([t,]).cuda()
             # sample q at step t
             # For means: we sample noise towards zero to then add to each point the noise (without normalizing the pcd)
             t_means = batch['splats'][:,:,:3]# + self.q_sample(torch.zeros_like(batch['splats'][:,:,:3]), t, noise[:,:,:3])
             # For other attributes: we sample noise regularly
-            t_pred = self.q_sample(batch['splats'][:,:,3:3+self.hparams['model']['out_dim']], t, noise)
-            t_other_attributes = batch['splats'][:,:,3+self.hparams['model']['out_dim']:]
-            t_sample = torch.cat((t_means, t_pred, t_other_attributes), dim=-1)
+            t_color = self.q_sample(batch['splats'][:,:,3:6], t, self.color_params, noise[:,:,:3])
+            t_opacity = self.q_sample(batch['splats'][:,:,6:7], t, self.opacity_params, noise[:,:,3:4])
+            t_scale = self.q_sample(batch['splats'][:,:,7:10], t, self.scale_params, noise[:,:,4:7])
+            t_quat0 = self.q_sample(batch['splats'][:,:,10:11], t, self.quat0_params, noise[:,:,7:8])
+            t_quatr = self.q_sample(batch['splats'][:,:,11:], t, self.quatr_params, noise[:,:,8:])
+
+            t_sample = torch.cat((t_means, t_color, t_opacity, t_scale, t_quat0, t_quatr), dim=-1)
+            print(f"Step {t.item()}: ")
+            torch.set_printoptions(precision=2, sci_mode=False)
+            print(t_sample[:,:,3:].mean(dim=[0,1]))
+            print(t_sample[:,:,3:].std(dim=[0,1]))
+            
 
             # replace the original points with the noise sampled
             x_full = self.points_to_tensor(t_sample, batch['mean'], batch['std'])

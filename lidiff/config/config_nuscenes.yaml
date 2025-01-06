@@ -1,5 +1,5 @@
 experiment:
-    id: unconditional_only_color_unknown_0.01
+    id: unconditional_given_means
 
 ##Data
 data:
@@ -19,21 +19,38 @@ train:
     num_workers: 4
     max_epoch: 20
     lr: 0.0001
-    batch_size: 4
+    batch_size: 1
     decay_lr: 1.0e-4
 
 diff:
-    beta_start: 3.5e-5
-    beta_end: 0.007
-    beta_func: 'linear'
+    color:
+        beta_start: 1.e-7
+        beta_end: 6.e-3
+        beta_func: 'linear'
+    opacity:
+        beta_start: 1.e-7
+        beta_end: 7.e-3
+        beta_func: 'linear'
+    scale:
+        beta_start: 1.e-7
+        beta_end: 5.e-3
+        beta_func: 'linear'
+    quat_0:
+        beta_start: 1.e-7
+        beta_end: 5.e-3
+        beta_func: 'linear'
+    quat_rest:
+        beta_start: 1.e-7
+        beta_end: 5.e-3
+        beta_func: 'linear'
     t_steps: 1000
     s_steps: 50
     reg_weight: 0.
 
 ##Network
 model:
-    in_dim: 16
-    out_dim: 3
+    in_dim: 14
+    out_dim: 11
 
 log:
     wandb: True

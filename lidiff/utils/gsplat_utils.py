@@ -111,7 +111,7 @@ def orth6d_to_quat(orth6d):
 def to_attributes(x):
     '''
     Args:
-        x: torch.Tensor of shape (N, 13) or (B, N, 13), x consists of [f_dc_0, f_dc_1, f_dc_2, opacity, scale_0, scale_1, scale_2, rotmat_00, rotmat_10, rotmat_20, rotmat_01, rotmat_11, rotmat_21]
+        x: torch.Tensor of shape (N, 11) or (B, N, 11), x consists of [f_dc_0, f_dc_1, f_dc_2, opacity, scale_0, scale_1, scale_2, rotmat_00, rotmat_10, rotmat_20, rotmat_01, rotmat_11, rotmat_21]
     Returns:
         torch.Tensor of shape (N, 11) or (B, N, 11)
     '''
@@ -119,7 +119,7 @@ def to_attributes(x):
     assert dim in [2, 3]
     if dim == 3:
         B, N, _ = x.shape
-        x = x.view(-1, 13)
+        x = x.view(-1, 11)
     else:
         B = 1
         N = x.shape[0]
@@ -127,7 +127,9 @@ def to_attributes(x):
     ret[:, :3] = inverse_sigmoid(torch.clamp(x[:, :3] * 0.5 + 0.5, min=0, max=1))
     ret[:, 3] = torch.clamp(x[:, 3] * 0.5 + 0.5, min=0, max=1)
     ret[:, 4:7] = torch.clamp(torch.exp(x[:, 4:7] * 8 - 3), min=0, max=40)
-    ret[:, 7:] = orth6d_to_quat(torch.clamp(x[:,7:], min=-1, max=1))
+    # ret[:, 7:] = orth6d_to_quat(torch.clamp(x[:,7:], min=-1, max=1))
+    ret[:, 7] = torch.clamp(x[:, 7] * 0.25 + 0.75, min=0.5, max=1)
+    ret[:, 8:] = torch.clamp(x[:, 8:] * ((0.5**0.5 + 1)/2) + (0.5**0.5 - 1)/2, min=-1, max=(0.5**0.5))
     return ret.view(B, N, 11) if dim == 3 else ret
 
 
@@ -137,14 +139,16 @@ def normalize_attributes(x):
     Args:
         x: np.array of shape (N, 11), x consists of [f_dc_0, f_dc_1, f_dc_2, opacity, scale_0, scale_1, scale_2, quat_0, quat_1, quat_2, quat_3]
     Returns:
-        np.array of shape (N, 13)
+        np.array of shape (N, 11)
     '''
     assert len(x.shape) == 2
-    ret = np.zeros((x.shape[0], 13))
+    ret = np.zeros((x.shape[0], 11))
     ret[:, :3] = (sigmoid(x[:, :3]) - 0.5) / 0.5
     ret[:, 3] = (x[:, 3] - 0.5) / 0.5
     ret[:, 4:7] = (np.log(x[:, 4:7] + 1e-6) + 3) / 8
-    ret[:, 7:] = quat_to_orth6d(x[:, 7:])
+    # ret[:, 7:] = quat_to_orth6d(x[:, 7:])
+    ret[:, 7] = (x[:, 7] - 0.75) / 0.25 # 0.5 < quat_0 < 1
+    ret[:, 8:] = (x[:, 8:] - (0.5**0.5 - 1)/2) / ((0.5**0.5 + 1)/2) # -1 < quat_1, quat_2, quat_3 < sqrt(2)/2
     return ret
 
 

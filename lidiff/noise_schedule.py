@@ -6,6 +6,7 @@ import torch
 import yaml
 import MinkowskiEngine as ME
 from tqdm import tqdm
+import time
 
 import lidiff.datasets.datasets as datasets
 import lidiff.models.models as models
@@ -48,10 +49,12 @@ def main(config):
     for k in batch.keys():
         if isinstance(batch[k], torch.Tensor):
             batch[k] = batch[k].cuda()
-    gs_dir = f"./noisy_gs/{cfg['diff']['beta_func']}_{cfg['diff']['beta_start']}_{cfg['diff']['beta_end']}"
+    gs_dir = f'./noisy_gs/{time.strftime("%Y%m%d-%H%M%S")}'
     makedirs(gs_dir, exist_ok=True)
     batch_idx = int(batch['indices'][0])
-    for t in range(model.t_steps-1, 0, -50):
+    t_lst = list(range(model.t_steps-1, 0, -50))
+    t_lst.append(0)
+    for t in t_lst:
         noisy_gs = model.add_noise(batch, t)
         assert len(noisy_gs) == 1
         noisy_gs = noisy_gs[0]
