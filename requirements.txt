@@ -12,3 +12,4 @@ pykeops==2.1.2
 diffusers==0.18.0
 nuscenes-devkit
 plyfile
+wandb

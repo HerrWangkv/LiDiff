@@ -33,7 +33,10 @@ Installing MinkowskiEngine:
 
 (`cp /software/all/toolkit/Intel_OneAPI/mkl/latest/lib/intel64/libmkl_rt.so $CONDA_PREFIX/lib`)
 
+(`cp /software/all/devel/cuda/11.8/lib64/libnvrtc.so $CONDA_PREFIX/lib`)
+
 `pip install -U thirdparty/MinkowskiEngine --no-deps`
+(`python setup.py install  --force_cuda --blas_include_dirs=/home/mrt/xw2723/pkgs/OpenBLAS/include --blas=openblas`)
 
 To setup the code run the following command on the code main directory:
 
