@@ -126,7 +126,7 @@ def to_attributes(x):
     ret = torch.zeros(B * N, 11).cuda()
     ret[:, :3] = inverse_sigmoid(torch.clamp(x[:, :3] * 0.5 + 0.5, min=0, max=1))
     ret[:, 3] = torch.clamp(x[:, 3] * 0.5 + 0.5, min=0, max=1)
-    ret[:, 4:7] = torch.clamp(torch.exp(x[:, 4:7] * 8 - 3), min=0, max=40)
+    ret[:, 4:7] = torch.clamp(x[:, 4:7], min=0, max=1)
     # ret[:, 7:] = orth6d_to_quat(torch.clamp(x[:,7:], min=-1, max=1))
     ret[:, 7] = torch.clamp(x[:, 7] * 0.25 + 0.75, min=0.5, max=1)
     ret[:, 8:] = torch.clamp(x[:, 8:] * ((0.5**0.5 + 1)/2) + (0.5**0.5 - 1)/2, min=-1, max=(0.5**0.5))
@@ -145,7 +145,7 @@ def normalize_attributes(x):
     ret = np.zeros((x.shape[0], 11))
     ret[:, :3] = (sigmoid(x[:, :3]) - 0.5) / 0.5
     ret[:, 3] = (x[:, 3] - 0.5) / 0.5
-    ret[:, 4:7] = (np.log(x[:, 4:7] + 1e-6) + 3) / 8
+    ret[:, 4:7] = np.clip(x[:, 4:7], 0, 1)
     # ret[:, 7:] = quat_to_orth6d(x[:, 7:])
     ret[:, 7] = (x[:, 7] - 0.75) / 0.25 # 0.5 < quat_0 < 1
     ret[:, 8:] = (x[:, 8:] - (0.5**0.5 - 1)/2) / ((0.5**0.5 + 1)/2) # -1 < quat_1, quat_2, quat_3 < sqrt(2)/2
