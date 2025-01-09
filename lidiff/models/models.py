@@ -528,8 +528,16 @@ class DiffusionSplats(LightningModule):
     #     # x_tm1_others = self.sqrt_recip_alphas[t.cpu()] * (others - self.sampling_coef_others[t.cpu()] * noise_t[:,:,3:]) + self.sqrt_posterior_variance[t.cpu()] * torch.randn_like(others)
     #     # x_tm1 = torch.cat((x_tm1_xyz, x_tm1_others), dim=-1)
     #     colors = features[:,:,3:6]
-    #     colors = self.sqrt_recip_alphas[t.cpu()] * (colors - self.sampling_coef_others[t.cpu()] * noise_t) + self.sqrt_posterior_variance[t.cpu()] * torch.randn_like(colors)
-    #     x_tm1 = torch.cat((features[:,:,:3], colors, features[:,:,6:]), dim=-1)
+    #     colors = self.color_params.sqrt_recip_alphas[t.cpu()] * (colors - self.color_params.sampling_coef_others[t.cpu()] * noise_t[:,:,:3]) + self.color_params.sqrt_posterior_variance[t.cpu()] * torch.randn_like(colors)
+    #     opacity = features[:,:,6:7]
+    #     opacity = self.opacity_params.sqrt_recip_alphas[t.cpu()] * (opacity - self.opacity_params.sampling_coef_others[t.cpu()] * noise_t[:,:,3:4]) + self.opacity_params.sqrt_posterior_variance[t.cpu()] * torch.randn_like(opacity)
+    #     scale = features[:,:,7:10]
+    #     scale = self.scale_params.sqrt_recip_alphas[t.cpu()] * (scale - self.scale_params.sampling_coef_others[t.cpu()] * noise_t[:,:,4:7]) + self.scale_params.sqrt_posterior_variance[t.cpu()] * torch.randn_like(scale)
+    #     quat0 = features[:,:,10:11]
+    #     quat0 = self.quat0_params.sqrt_recip_alphas[t.cpu()] * (quat0 - self.quat0_params.sampling_coef_others[t.cpu()] * noise_t[:,:,7:8]) + self.quat0_params.sqrt_posterior_variance[t.cpu()] * torch.randn_like(quat0)
+    #     quatr = features[:,:,11:]
+    #     quatr = self.quatr_params.sqrt_recip_alphas[t.cpu()] * (quatr - self.quatr_params.sampling_coef_others[t.cpu()] * noise_t[:,:,8:]) + self.quatr_params.sqrt_posterior_variance[t.cpu()] * torch.randn_like(quatr)
+    #     x_tm1 = torch.cat((features[:,:,:3], colors, opacity, scale, quat0, quatr), dim=-1)
     #     return x_tm1
 
     # def p_sample_loop(self, x_init, x_t, gt_pts, x_mean, x_std):
