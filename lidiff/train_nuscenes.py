@@ -47,7 +47,7 @@ def main(config, weights, checkpoint, test):
         cfg['data']['data_dir'] = environ.get('TRAIN_DATABASE')
     
     if cfg['log']['wandb']:
-        wandb.init(project="known_means", config=cfg)
+        wandb.init(project="known_means_bg", config=cfg)
     #Load data and model
     if weights is None:
         model = models.DiffusionSplats(cfg)
