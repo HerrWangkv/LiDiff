@@ -3,9 +3,9 @@ experiment:
 
 ##Data
 data:
-    data_dir: '/storage_local/kwang/nuscenes/raw'
-    splats_dir: '/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/10000_-100_100_-15_5_bg'
-    resolution: 0.01
+    data_dir: '/hkfs/work/workspace_haic/scratch/xw2723-nuscenes/raw'
+    splats_dir: '/hkfs/work/workspace_haic/scratch/xw2723-nuscenes/framewise'
+    resolution: 0.05
     dataloader: 'NuScenes'
     num_lidar_points: 1000
     horizontal_range: [-100., 100.]
@@ -25,23 +25,23 @@ train:
 diff:
     color:
         beta_start: 1.e-6
-        beta_end: 3.e-3
+        beta_end: 5.e-3
         beta_func: 'linear'
     opacity:
         beta_start: 1.e-6
-        beta_end: 3.e-3
+        beta_end: 5.e-3
         beta_func: 'linear'
     scale:
         beta_start: 1.e-6
-        beta_end: 3.e-3
+        beta_end: 5.e-3
         beta_func: 'linear'
     quat_0:
         beta_start: 1.e-6
-        beta_end: 3.e-3
+        beta_end: 5.e-3
         beta_func: 'linear'
     quat_rest:
         beta_start: 1.e-6
-        beta_end: 3.e-3
+        beta_end: 5.e-3
         beta_func: 'linear'
     t_steps: 1000
     s_steps: 50

@@ -148,7 +148,7 @@ class MinkUNetDiff(nn.Module):
         cr = kwargs.get('cr', 1.0)
         in_channels = kwargs.get('in_channels', 3)
         out_channels = kwargs.get('out_channels', 3)
-        cs = [32, 32, 64, 128, 256, 512, 512, 512, 512, 256, 128, 96, 96]
+        cs = [32, 32, 64, 128, 256, 512, 1024, 1024, 512, 256, 128, 96, 96]
         cs = [int(cr * x) for x in cs] 
         self.embed_dim = cs[-1]
         self.run_up = kwargs.get('run_up', True)
