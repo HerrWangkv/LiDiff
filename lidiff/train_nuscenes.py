@@ -101,7 +101,7 @@ def main(config, weights, checkpoint, test):
                           callbacks=[lr_monitor, checkpoint_saver],
                           check_val_every_n_epoch=1,
                           num_sanity_val_steps=0,
-                          limit_val_batches=0.1,
+                          limit_val_batches=1,
                           accelerator='ddp',
                           )
     else:
@@ -113,7 +113,7 @@ def main(config, weights, checkpoint, test):
                           callbacks=[lr_monitor, checkpoint_saver],
                           check_val_every_n_epoch=1,
                           num_sanity_val_steps=0,
-                          limit_val_batches=0.1,
+                          limit_val_batches=1,
                           )
 
 

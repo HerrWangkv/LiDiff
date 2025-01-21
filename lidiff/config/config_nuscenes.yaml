@@ -3,9 +3,9 @@ experiment:
 
 ##Data
 data:
-    data_dir: '/hkfs/work/workspace_haic/scratch/xw2723-nuscenes/raw'
-    splats_dir: '/hkfs/work/workspace_haic/scratch/xw2723-nuscenes/framewise'
-    resolution: 0.05
+    data_dir: '/storage_local/kwang/nuscenes/raw'
+    splats_dir: '/storage_local/kwang/nuscenes/framewise/'
+    resolution: 0.01
     dataloader: 'NuScenes'
     num_lidar_points: 1000
     horizontal_range: [-100., 100.]
@@ -17,9 +17,9 @@ train:
     uncond_w: 6.
     n_gpus: 1
     num_workers: 4
-    max_epoch: 20
+    max_epoch: 1
     lr: 0.0001
-    batch_size: 24
+    batch_size: 1
     decay_lr: 1.0e-4
 
 diff:
@@ -50,7 +50,7 @@ diff:
 ##Network
 model:
     in_dim: 14
-    out_dim: 11
+    out_dim: 3
 
 log:
-    wandb: False
+    wandb: True

@@ -148,7 +148,7 @@ class MinkUNetDiff(nn.Module):
         cr = kwargs.get('cr', 1.0)
         in_channels = kwargs.get('in_channels', 3)
         out_channels = kwargs.get('out_channels', 3)
-        cs = [32, 32, 64, 128, 256, 512, 512, 512, 512, 512, 512, 512, 512, 256, 128, 96, 96]
+        cs = [32, 32, 64, 128, 256, 256, 128, 96, 96]
         cs = [int(cr * x) for x in cs] 
         self.embed_dim = cs[-1]
         self.run_up = kwargs.get('run_up', True)
@@ -161,449 +161,229 @@ class MinkUNetDiff(nn.Module):
             ME.MinkowskiBatchNorm(cs[0]),
             ME.MinkowskiReLU(inplace=True)
         )
-        hidden_dim = cs[8]
+
         # Stage1 temp embed proj and conv
         # self.latent_stage1 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),              
+        #     nn.Linear(cs[4], cs[4]),              
         #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         # )
 
         self.latemp_stage1 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
+            nn.Linear(cs[4], cs[4]),
+            # nn.Linear(cs[4]+cs[4], cs[4]),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, cs[0]),
+            nn.Linear(cs[4], cs[0]),
         )
 
         self.stage1_temp  = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
+            nn.Linear(self.embed_dim, cs[4]),
         )
 
         self.stage1 = nn.Sequential(
-            BasicConvolutionBlock(cs[0], cs[0], ks=2, stride=2, dilation=1, D=self.D),
+            BasicConvolutionBlock(cs[0], cs[0], ks=16, stride=16, dilation=1, D=self.D),
             ResidualBlock(cs[0], cs[1], ks=3, stride=1, dilation=1, D=self.D),
             ResidualBlock(cs[1], cs[1], ks=3, stride=1, dilation=1, D=self.D),
         )
 
         # Stage2 temp embed proj and conv
         # self.latent_stage2 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         # )
 
         self.latemp_stage2 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
+            nn.Linear(cs[4], cs[4]),
+            # nn.Linear(cs[4]+cs[4], cs[4]),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, cs[1]),
+            nn.Linear(cs[4], cs[1]),
         )
 
         self.stage2_temp  = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
+            nn.Linear(self.embed_dim, cs[4]),
         )
 
         self.stage2 = nn.Sequential(
-            BasicConvolutionBlock(cs[1], cs[1], ks=2, stride=2, dilation=1, D=self.D),
+            BasicConvolutionBlock(cs[1], cs[1], ks=16, stride=16, dilation=1, D=self.D),
             ResidualBlock(cs[1], cs[2], ks=3, stride=1, dilation=1, D=self.D),
             ResidualBlock(cs[2], cs[2], ks=3, stride=1, dilation=1, D=self.D)
         )
 
         # Stage3 temp embed proj and conv
         # self.latent_stage3 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         # )
 
         self.latemp_stage3 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
+            nn.Linear(cs[4], cs[4]),
+            # nn.Linear(cs[4]+cs[4], cs[4]),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, cs[2]),
+            nn.Linear(cs[4], cs[2]),
         )
 
         self.stage3_temp  = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
+            nn.Linear(self.embed_dim, cs[4]),
         )
 
         self.stage3 = nn.Sequential(
-            BasicConvolutionBlock(cs[2], cs[2], ks=2, stride=2, dilation=1, D=self.D),
+            BasicConvolutionBlock(cs[2], cs[2], ks=16, stride=16, dilation=1, D=self.D),
             ResidualBlock(cs[2], cs[3], ks=3, stride=1, dilation=1, D=self.D),
             ResidualBlock(cs[3], cs[3], ks=3, stride=1, dilation=1, D=self.D),
         )
 
         # Stage4 temp embed proj and conv
         # self.latent_stage4 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),              
+        #     nn.Linear(cs[4], cs[4]),              
         # )
 
         self.latemp_stage4 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
+            nn.Linear(cs[4], cs[4]),
+            # nn.Linear(cs[4]+cs[4], cs[4]),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, cs[3]),
+            nn.Linear(cs[4], cs[3]),
         )
 
         self.stage4_temp  = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
+            nn.Linear(self.embed_dim, cs[4]),
         )
 
         self.stage4 = nn.Sequential(
-            BasicConvolutionBlock(cs[3], cs[3], ks=2, stride=2, dilation=1, D=self.D),
+            BasicConvolutionBlock(cs[3], cs[3], ks=16, stride=16, dilation=1, D=self.D),
             ResidualBlock(cs[3], cs[4], ks=3, stride=1, dilation=1, D=self.D),
             ResidualBlock(cs[4], cs[4], ks=3, stride=1, dilation=1, D=self.D),
         )
 
-        # Stage5 temp embed proj and conv
-        # self.latent_stage5 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
-        #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),              
-        # )
-
-        self.latemp_stage5 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, cs[4]),
-        )
-
-        self.stage5_temp  = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
-        )
-
-        self.stage5 = nn.Sequential(
-            BasicConvolutionBlock(cs[4], cs[4], ks=2, stride=2, dilation=1, D=self.D),
-            ResidualBlock(cs[4], cs[5], ks=3, stride=1, dilation=1, D=self.D),
-            ResidualBlock(cs[5], cs[5], ks=3, stride=1, dilation=1, D=self.D),
-        )
-
-        # Stage6 temp embed proj and conv
-        # self.latent_stage6 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
-        #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),              
-        # )
-
-        self.latemp_stage6 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, cs[5]),
-        )
-
-        self.stage6_temp  = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
-        )
-
-        self.stage6 = nn.Sequential(
-            BasicConvolutionBlock(cs[5], cs[5], ks=2, stride=2, dilation=1, D=self.D),
-            ResidualBlock(cs[5], cs[6], ks=3, stride=1, dilation=1, D=self.D),
-            ResidualBlock(cs[6], cs[6], ks=3, stride=1, dilation=1, D=self.D),
-        )
-
-        # Stage7 temp embed proj and conv
-        # self.latent_stage7 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
-        #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),              
-        # )
-
-        self.latemp_stage7 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, cs[6]),
-        )
-
-        self.stage7_temp  = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
-        )
-
-        self.stage7 = nn.Sequential(
-            BasicConvolutionBlock(cs[6], cs[6], ks=2, stride=2, dilation=1, D=self.D),
-            ResidualBlock(cs[6], cs[7], ks=3, stride=1, dilation=1, D=self.D),
-            ResidualBlock(cs[7], cs[7], ks=3, stride=1, dilation=1, D=self.D),
-        )
-
-        # Stage8 temp embed proj and conv
-        # self.latent_stage8 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
-        #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),              
-        # )
-
-        self.latemp_stage8 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, cs[7]),
-        )
-
-        self.stage8_temp  = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
-        )
-
-        self.stage8 = nn.Sequential(
-            BasicConvolutionBlock(cs[7], cs[7], ks=2, stride=2, dilation=1, D=self.D),
-            ResidualBlock(cs[7], cs[8], ks=3, stride=1, dilation=1, D=self.D),
-            ResidualBlock(cs[8], cs[8], ks=3, stride=1, dilation=1, D=self.D),
-        )
-
         # Up1 temp embed proj and conv
         # self.latent_up1 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         # )
 
         self.latemp_up1 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.Linear(hidden_dim+hidden_dim, hidden_dim),
+            nn.Linear(cs[4], cs[4]),
+            # nn.Linear(cs[4]+cs[4], cs[4]),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(cs[4], cs[4]),
         )
 
         self.up1_temp  = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
+            nn.Linear(self.embed_dim, cs[4]),
         )
 
         self.up1 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[8], cs[9], ks=2, stride=2, D=self.D),
+            BasicDeconvolutionBlock(cs[4], cs[5], ks=16, stride=16, D=self.D),
             nn.Sequential(
-                ResidualBlock(cs[9] + cs[7], cs[9], ks=3, stride=1,
+                ResidualBlock(cs[5] + cs[3], cs[5], ks=3, stride=1,
                               dilation=1, D=self.D),
-                ResidualBlock(cs[9], cs[9], ks=3, stride=1, dilation=1, D=self.D),
+                ResidualBlock(cs[5], cs[5], ks=3, stride=1, dilation=1, D=self.D),
             )
         ])
 
         # Up2 temp embed proj and conv
         # self.latent_up2 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         # )
 
         self.latemp_up2 = nn.Sequential(
-            nn.Linear(hidden_dim, cs[9]),
-            # nn.Linear(hidden_dim+hidden_dim, cs[9]),
+            nn.Linear(cs[4], cs[5]),
+            # nn.Linear(cs[4]+cs[4], cs[5]),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(cs[9], cs[9]),
+            nn.Linear(cs[5], cs[5]),
         )
 
         self.up2_temp  = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
+            nn.Linear(self.embed_dim, cs[4]),
         )
 
         self.up2 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[9], cs[10], ks=2, stride=2, D=self.D),
+            BasicDeconvolutionBlock(cs[5], cs[6], ks=16, stride=16, D=self.D),
             nn.Sequential(
-                ResidualBlock(cs[10] + cs[6], cs[10], ks=3, stride=1,
+                ResidualBlock(cs[6] + cs[2], cs[6], ks=3, stride=1,
                               dilation=1, D=self.D),
-                ResidualBlock(cs[10], cs[10], ks=3, stride=1, dilation=1, D=self.D),
+                ResidualBlock(cs[6], cs[6], ks=3, stride=1, dilation=1, D=self.D),
             )
         ])
 
         # Up3 temp embed proj and conv
         # self.latent_up3 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         # )
 
         self.latemp_up3 = nn.Sequential(
-            nn.Linear(hidden_dim, cs[10]),
-            # nn.Linear(hidden_dim+hidden_dim, cs[10]),
+            nn.Linear(cs[4], cs[6]),
+            # nn.Linear(cs[4]+cs[4], cs[6]),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(cs[10], cs[10]),
+            nn.Linear(cs[6], cs[6]),
         )
 
         self.up3_temp  = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
+            nn.Linear(self.embed_dim, cs[4]),
         )
 
         self.up3 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[10], cs[11], ks=2, stride=2, D=self.D),
+            BasicDeconvolutionBlock(cs[6], cs[7], ks=16, stride=16, D=self.D),
             nn.Sequential(
-                ResidualBlock(cs[11] + cs[5], cs[11], ks=3, stride=1,
+                ResidualBlock(cs[7] + cs[1], cs[7], ks=3, stride=1,
                               dilation=1, D=self.D),
-                ResidualBlock(cs[11], cs[11], ks=3, stride=1, dilation=1, D=self.D),
+                ResidualBlock(cs[7], cs[7], ks=3, stride=1, dilation=1, D=self.D),
             )
         ])
 
         # Up4 temp embed proj and conv
         # self.latent_up4 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),              
+        #     nn.Linear(cs[4], cs[4]),              
         #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.Linear(cs[4], cs[4]),
         # )
 
         self.latemp_up4 = nn.Sequential(
-            nn.Linear(hidden_dim, cs[11]),
-            # nn.Linear(hidden_dim+hidden_dim, cs[11]),
+            nn.Linear(cs[4], cs[7]),
+            # nn.Linear(cs[4]+cs[4], cs[7]),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(cs[11], cs[11]),
+            nn.Linear(cs[7], cs[7]),
         )
 
         self.up4_temp  = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
+            nn.Linear(self.embed_dim, cs[4]),
         )
 
         self.up4 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[11], cs[12], ks=2, stride=2, D=self.D),
+            BasicDeconvolutionBlock(cs[7], cs[8], ks=16, stride=16, D=self.D),
             nn.Sequential(
-                ResidualBlock(cs[12] + cs[4], cs[12], ks=3, stride=1,
+                ResidualBlock(cs[8] + cs[0], cs[8], ks=3, stride=1,
                               dilation=1, D=self.D),
-                ResidualBlock(cs[12], cs[12], ks=3, stride=1, dilation=1, D=self.D),
-            )
-        ])
-
-        # Up5 temp embed proj and conv
-        # self.latent_up5 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),              
-        #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
-        # )
-
-        self.latemp_up5 = nn.Sequential(
-            nn.Linear(hidden_dim, cs[12]),
-            # nn.Linear(hidden_dim+hidden_dim, cs[12]),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(cs[12], cs[12]),
-        )
-
-        self.up5_temp  = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
-        )
-
-        self.up5 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[12], cs[13], ks=2, stride=2, D=self.D),
-            nn.Sequential(
-                ResidualBlock(cs[13] + cs[3], cs[13], ks=3, stride=1,
-                              dilation=1, D=self.D),
-                ResidualBlock(cs[13], cs[13], ks=3, stride=1, dilation=1, D=self.D),
-            )
-        ])
-
-        # Up6 temp embed proj and conv
-        # self.latent_up6 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),              
-        #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
-        # )
-
-        self.latemp_up6 = nn.Sequential(
-            nn.Linear(hidden_dim, cs[13]),
-            # nn.Linear(hidden_dim+hidden_dim, cs[13]),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(cs[13], cs[13]),
-        )
-
-        self.up6_temp  = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
-        )
-
-        self.up6 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[13], cs[14], ks=2, stride=2, D=self.D),
-            nn.Sequential(
-                ResidualBlock(cs[14] + cs[2], cs[14], ks=3, stride=1,
-                              dilation=1, D=self.D),
-                ResidualBlock(cs[14], cs[14], ks=3, stride=1, dilation=1, D=self.D),
-            )
-        ])
-
-        # Up7 temp embed proj and conv
-        # self.latent_up7 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),              
-        #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
-        # )
-
-        self.latemp_up7 = nn.Sequential(
-            nn.Linear(hidden_dim, cs[14]),
-            # nn.Linear(hidden_dim+hidden_dim, cs[14]),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(cs[14], cs[14]),
-        )
-
-        self.up7_temp  = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
-        )
-
-        self.up7 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[14], cs[15], ks=2, stride=2, D=self.D),
-            nn.Sequential(
-                ResidualBlock(cs[15] + cs[1], cs[15], ks=3, stride=1,
-                              dilation=1, D=self.D),
-                ResidualBlock(cs[15], cs[15], ks=3, stride=1, dilation=1, D=self.D),
-            )
-        ])
-
-        # Up8 temp embed proj and conv
-        # self.latent_up8 = nn.Sequential(
-        #     nn.Linear(hidden_dim, hidden_dim),              
-        #     nn.LeakyReLU(0.1, inplace=True),
-        #     nn.Linear(hidden_dim, hidden_dim),
-        # )
-
-        self.latemp_up8 = nn.Sequential(
-            nn.Linear(hidden_dim, cs[15]),
-            # nn.Linear(hidden_dim+hidden_dim, cs[15]),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(cs[15], cs[15]),
-        )
-
-        self.up8_temp  = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Linear(self.embed_dim, hidden_dim),
-        )
-
-        self.up8 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[15], cs[16], ks=2, stride=2, D=self.D),
-            nn.Sequential(
-                ResidualBlock(cs[16] + cs[0], cs[16], ks=3, stride=1,
-                              dilation=1, D=self.D),
-                ResidualBlock(cs[16], cs[16], ks=3, stride=1, dilation=1, D=self.D),
+                ResidualBlock(cs[8], cs[8], ks=3, stride=1, dilation=1, D=self.D),
             )
         ])
 
         self.last  = nn.Sequential(
-            nn.Linear(cs[16], 40),
+            nn.Linear(cs[8], 40),
             nn.LeakyReLU(0.1, inplace=True),
             nn.Linear(40, out_channels),
         )
@@ -688,132 +468,53 @@ class MinkUNetDiff(nn.Module):
         x4 = self.stage4(x3*w3)
         # print(x4.F.shape)
         # match4 = self.match_part_to_full(x4, part_feats)
-        # p4 = self.latent_stage5(match4) 
-        t4 = self.stage5_temp(temp_emb)
+        # p4 = self.latent_up1(match4) 
+        t4 = self.up1_temp(temp_emb)
         batch_temp = torch.unique(x4.C[:,0], return_counts=True)[1]
         t4 = torch.repeat_interleave(t4, batch_temp, dim=0)
-        w4 = self.latemp_stage5(t4)#torch.cat((p4,t4),-1))
+        w4 = self.latemp_up1(t4)#torch.cat((t4,p4),-1))
 
-        x5 = self.stage5(x4*w4)
-        # print(x5.F.shape)
-        # match5 = self.match_part_to_full(x5, part_feats)
-        # p5 = self.latent_stage6(match5) 
-        t5 = self.stage6_temp(temp_emb)
-        batch_temp = torch.unique(x5.C[:,0], return_counts=True)[1]
-        t5 = torch.repeat_interleave(t5, batch_temp, dim=0)
-        w5 = self.latemp_stage6(t5)#torch.cat((p5,t5),-1))
-
-        x6 = self.stage6(x5*w5)
-        # print(x6.F.shape)
-        # match6 = self.match_part_to_full(x6, part_feats)
-        # p6 = self.latent_stage6(match6) 
-        t6 = self.stage7_temp(temp_emb)
-        batch_temp = torch.unique(x6.C[:,0], return_counts=True)[1]
-        t6 = torch.repeat_interleave(t6, batch_temp, dim=0)
-        w6 = self.latemp_stage7(t6)#torch.cat((p6,t6),-1))
-
-        x7 = self.stage7(x6*w6)
-        # print(x7.F.shape)
-        # match7 = self.match_part_to_full(x7, part_feats)
-        # p7 = self.latent_up1(match7) 
-        t7 = self.stage8_temp(temp_emb)
-        batch_temp = torch.unique(x7.C[:,0], return_counts=True)[1]
-        t7 = torch.repeat_interleave(t7, batch_temp, dim=0)
-        w7 = self.latemp_stage8(t7)#torch.cat((t7,p7),-1))
-
-        x8 = self.stage8(x7*w7)
-        # print(x8.F.shape)
-        # match8 = self.match_part_to_full(x8, part_feats)
-        # p8 = self.latent_up1(match8) 
-        t8 = self.up1_temp(temp_emb)
-        batch_temp = torch.unique(x8.C[:,0], return_counts=True)[1]
-        t8 = torch.repeat_interleave(t8, batch_temp, dim=0)
-        w8 = self.latemp_up1(t8)#torch.cat((t8,p8),-1))
-
-        y1 = self.up1[0](x8*w8)
+        y1 = self.up1[0](x4*w4)
         # print(y1.F.shape)
-        y1 = ME.cat(y1, x7)
+        y1 = ME.cat(y1, x3)
         y1 = self.up1[1](y1)
-        # match9 = self.match_part_to_full(y1, part_feats)
-        # p9 = self.latent_up2(match9) 
-        t9 = self.up2_temp(temp_emb)
+        # match5 = self.match_part_to_full(y1, part_feats)
+        # p5 = self.latent_up2(match5) 
+        t5 = self.up2_temp(temp_emb)
         batch_temp = torch.unique(y1.C[:,0], return_counts=True)[1]
-        t9 = torch.repeat_interleave(t9, batch_temp, dim=0)
-        w9 = self.latemp_up2(t9)#torch.cat((p9,t9),-1))
+        t5 = torch.repeat_interleave(t5, batch_temp, dim=0)
+        w5 = self.latemp_up2(t5)#torch.cat((p5,t5),-1))
 
-        y2 = self.up2[0](y1*w9)
+        y2 = self.up2[0](y1*w5)
         # print(y2.F.shape)
-        y2 = ME.cat(y2, x6)
+        y2 = ME.cat(y2, x2)
         y2 = self.up2[1](y2)
-        # match10 = self.match_part_to_full(y2, part_feats)
-        # p10 = self.latent_up3(match10) 
-        t10 = self.up3_temp(temp_emb)
+        # match6 = self.match_part_to_full(y2, part_feats)
+        # p6 = self.latent_up3(match6) 
+        t6 = self.up3_temp(temp_emb)
         batch_temp = torch.unique(y2.C[:,0], return_counts=True)[1]
-        t10 = torch.repeat_interleave(t10, batch_temp, dim=0)
-        w10 = self.latemp_up3(t10)#torch.cat((p10,t10),-1))       
+        t6 = torch.repeat_interleave(t6, batch_temp, dim=0)
+        w6 = self.latemp_up3(t6)#torch.cat((p6,t6),-1))       
 
-        y3 = self.up3[0](y2*w10)
+        y3 = self.up3[0](y2*w6)
         # print(y3.F.shape)
-        y3 = ME.cat(y3, x5)
+        y3 = ME.cat(y3, x1)
         y3 = self.up3[1](y3)
-        # match11 = self.match_part_to_full(y3, part_feats)
-        # p11 = self.latent_up4(match11) 
-        t11 = self.up4_temp(temp_emb)
+        # match7 = self.match_part_to_full(y3, part_feats)
+        # p7 = self.latent_up4(match7) 
+        t7 = self.up4_temp(temp_emb)
         batch_temp = torch.unique(y3.C[:,0], return_counts=True)[1]
-        t11 = torch.repeat_interleave(t11, batch_temp, dim=0)
-        w11 = self.latemp_up4(t11)#torch.cat((p11,t11),-1))
+        t7 = torch.repeat_interleave(t7, batch_temp, dim=0)
+        w7 = self.latemp_up4(t7)#torch.cat((p7,t7),-1))
         
-        y4 = self.up4[0](y3*w11)
+        y4 = self.up4[0](y3*w7)
         # print(y4.F.shape)
-        y4 = ME.cat(y4, x4)
-        y4 = self.up4[1](y4)
-        # match12 = self.match_part_to_full(y4, part_feats)
-        # p12 = self.latent_up5(match12) 
-        t12 = self.up5_temp(temp_emb)
-        batch_temp = torch.unique(y4.C[:,0], return_counts=True)[1]
-        t12 = torch.repeat_interleave(t12, batch_temp, dim=0)
-        w12 = self.latemp_up5(t12)#torch.cat((p12,t12),-1))
-
-        y5 = self.up5[0](y4*w12)
-        # print(y5.F.shape)
-        y5 = ME.cat(y5, x3)
-        y5 = self.up5[1](y5)
-        # match13 = self.match_part_to_full(y5, part_feats)
-        # p13 = self.latent_up6(match13) 
-        t13 = self.up6_temp(temp_emb)
-        batch_temp = torch.unique(y5.C[:,0], return_counts=True)[1]
-        t13 = torch.repeat_interleave(t13, batch_temp, dim=0)
-        w13 = self.latemp_up6(t13)#torch.cat((p13,t13),-1))
-
-        y6 = self.up6[0](y5*w13)
-        # print(y6.F.shape)
-        y6 = ME.cat(y6, x2)
-        y6 = self.up6[1](y6)
-        # match14 = self.match_part_to_full(y6, part_feats)
-        # p14 = self.latent_up6(match14) 
-        t14 = self.up7_temp(temp_emb)
-        batch_temp = torch.unique(y6.C[:,0], return_counts=True)[1]
-        t14 = torch.repeat_interleave(t14, batch_temp, dim=0)
-        w14 = self.latemp_up7(t14)#torch.cat((p14,t14),-1))
-
-        y7 = self.up7[0](y6*w14)
-        # print(y7.F.shape)
-        y7 = ME.cat(y7, x1)
-        y7 = self.up7[1](y7)
-        # match15 = self.match_part_to_full(y7, part_feats)
-        # p15 = self.latent_up7(match15) 
-        t15 = self.up8_temp(temp_emb)
-        batch_temp = torch.unique(y7.C[:,0], return_counts=True)[1]
-        t15 = torch.repeat_interleave(t15, batch_temp, dim=0)
-        w15 = self.latemp_up8(t15)#torch.cat((p15,t15),-1))
-
-        y8 = self.up8[0](y7*w15)
-        # print(y8.F.shape)
         # breakpoint()
-        y8 = ME.cat(y8, x0)
-        y8 = self.up8[1](y8)
+        y4 = ME.cat(y4, x0)
+        y4 = self.up4[1](y4)
          
-        return self.last(y8.slice(x).F)
+        return self.last(y4.slice(x).F)
+
 
 
 class MinkUNet(nn.Module):

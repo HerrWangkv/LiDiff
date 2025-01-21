@@ -124,7 +124,7 @@ def to_attributes(x):
         B = 1
         N = x.shape[0]
     ret = torch.zeros(B * N, 11).cuda()
-    ret[:, :3] = inverse_sigmoid(torch.clamp(x[:, :3] * 0.5 + 0.5, min=0, max=1))
+    ret[:, :3] = inverse_sigmoid(torch.clamp(x[:, :3] * 0.5 + 0.5, min=1e-6, max=1-1e-6))
     ret[:, 3] = torch.clamp(x[:, 3] * 0.5 + 0.5, min=0, max=1)
     ret[:, 4:7] = torch.clamp(x[:, 4:7], min=0, max=1)
     # ret[:, 7:] = orth6d_to_quat(torch.clamp(x[:,7:], min=-1, max=1))
