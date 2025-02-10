@@ -87,11 +87,11 @@ class TemporalNuScenesDataModule(LightningDataModule):
     def train_dataloader(self):
         assert self.cfg['data']['horizontal_range'][0] + self.cfg['data']['horizontal_range'][1] == 0, 'Horizontal range must be symmetric'
         map_size = self.cfg['data']['horizontal_range'][1] - self.cfg['data']['horizontal_range'][0]
-        data_set = NuScenesDataset(version='v1.0-trainval', 
+        data_set = NuScenesDataset(version='v1.0-mini', 
                                    dataroot=self.cfg['data']['data_dir'], 
                                    splats_dir=self.cfg['data']['splats_dir'],
                                    map_size=map_size,
-                                   split='train',
+                                   split=[0],#'train',
                                    keys=['lidar', 'splats'],)
 
         collate = LidarSplatsCollation(num_lidar_points=self.cfg['data']['num_lidar_points'])
@@ -102,11 +102,11 @@ class TemporalNuScenesDataModule(LightningDataModule):
     def val_dataloader(self, pre_training=True):
         assert self.cfg['data']['horizontal_range'][0] + self.cfg['data']['horizontal_range'][1] == 0, 'Horizontal range must be symmetric'
         map_size = self.cfg['data']['horizontal_range'][1] - self.cfg['data']['horizontal_range'][0]
-        data_set = NuScenesDataset(version='v1.0-trainval', 
+        data_set = NuScenesDataset(version='v1.0-mini', 
                                    dataroot=self.cfg['data']['data_dir'], 
                                    splats_dir=self.cfg['data']['splats_dir'],
                                    map_size=map_size,
-                                   split='mini_val',#TODO: maybe val
+                                   split=[0],#'mini_val',#TODO: maybe val
                                    keys=['lidar', 'splats'],)
 
         collate = LidarSplatsCollation(num_lidar_points=self.cfg['data']['num_lidar_points'])

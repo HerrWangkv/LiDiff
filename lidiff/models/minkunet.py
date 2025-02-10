@@ -154,10 +154,10 @@ class MinkUNetDiff(nn.Module):
         self.run_up = kwargs.get('run_up', True)
         self.D = kwargs.get('D', 3)
         self.stem = nn.Sequential(
-            ME.MinkowskiConvolution(in_channels, cs[0], kernel_size=3, stride=1, dimension=self.D),
+            ME.MinkowskiConvolution(in_channels, cs[0], kernel_size=16, stride=1, dimension=self.D),
             ME.MinkowskiBatchNorm(cs[0]),
             ME.MinkowskiReLU(True),
-            ME.MinkowskiConvolution(cs[0], cs[0], kernel_size=3, stride=1, dimension=self.D),
+            ME.MinkowskiConvolution(cs[0], cs[0], kernel_size=16, stride=1, dimension=self.D),
             ME.MinkowskiBatchNorm(cs[0]),
             ME.MinkowskiReLU(inplace=True)
         )
@@ -184,8 +184,8 @@ class MinkUNetDiff(nn.Module):
 
         self.stage1 = nn.Sequential(
             BasicConvolutionBlock(cs[0], cs[0], ks=16, stride=16, dilation=1, D=self.D),
-            ResidualBlock(cs[0], cs[1], ks=3, stride=1, dilation=1, D=self.D),
-            ResidualBlock(cs[1], cs[1], ks=3, stride=1, dilation=1, D=self.D),
+            ResidualBlock(cs[0], cs[1], ks=8, stride=1, dilation=1, D=self.D),
+            ResidualBlock(cs[1], cs[1], ks=8, stride=1, dilation=1, D=self.D),
         )
 
         # Stage2 temp embed proj and conv
@@ -210,8 +210,8 @@ class MinkUNetDiff(nn.Module):
 
         self.stage2 = nn.Sequential(
             BasicConvolutionBlock(cs[1], cs[1], ks=16, stride=16, dilation=1, D=self.D),
-            ResidualBlock(cs[1], cs[2], ks=3, stride=1, dilation=1, D=self.D),
-            ResidualBlock(cs[2], cs[2], ks=3, stride=1, dilation=1, D=self.D)
+            ResidualBlock(cs[1], cs[2], ks=8, stride=1, dilation=1, D=self.D),
+            ResidualBlock(cs[2], cs[2], ks=8, stride=1, dilation=1, D=self.D)
         )
 
         # Stage3 temp embed proj and conv
@@ -236,8 +236,8 @@ class MinkUNetDiff(nn.Module):
 
         self.stage3 = nn.Sequential(
             BasicConvolutionBlock(cs[2], cs[2], ks=16, stride=16, dilation=1, D=self.D),
-            ResidualBlock(cs[2], cs[3], ks=3, stride=1, dilation=1, D=self.D),
-            ResidualBlock(cs[3], cs[3], ks=3, stride=1, dilation=1, D=self.D),
+            ResidualBlock(cs[2], cs[3], ks=8, stride=1, dilation=1, D=self.D),
+            ResidualBlock(cs[3], cs[3], ks=8, stride=1, dilation=1, D=self.D),
         )
 
         # Stage4 temp embed proj and conv
@@ -262,8 +262,8 @@ class MinkUNetDiff(nn.Module):
 
         self.stage4 = nn.Sequential(
             BasicConvolutionBlock(cs[3], cs[3], ks=16, stride=16, dilation=1, D=self.D),
-            ResidualBlock(cs[3], cs[4], ks=3, stride=1, dilation=1, D=self.D),
-            ResidualBlock(cs[4], cs[4], ks=3, stride=1, dilation=1, D=self.D),
+            ResidualBlock(cs[3], cs[4], ks=8, stride=1, dilation=1, D=self.D),
+            ResidualBlock(cs[4], cs[4], ks=8, stride=1, dilation=1, D=self.D),
         )
 
         # Up1 temp embed proj and conv
@@ -289,9 +289,9 @@ class MinkUNetDiff(nn.Module):
         self.up1 = nn.ModuleList([
             BasicDeconvolutionBlock(cs[4], cs[5], ks=16, stride=16, D=self.D),
             nn.Sequential(
-                ResidualBlock(cs[5] + cs[3], cs[5], ks=3, stride=1,
+                ResidualBlock(cs[5] + cs[3], cs[5], ks=8, stride=1,
                               dilation=1, D=self.D),
-                ResidualBlock(cs[5], cs[5], ks=3, stride=1, dilation=1, D=self.D),
+                ResidualBlock(cs[5], cs[5], ks=8, stride=1, dilation=1, D=self.D),
             )
         ])
 
@@ -318,9 +318,9 @@ class MinkUNetDiff(nn.Module):
         self.up2 = nn.ModuleList([
             BasicDeconvolutionBlock(cs[5], cs[6], ks=16, stride=16, D=self.D),
             nn.Sequential(
-                ResidualBlock(cs[6] + cs[2], cs[6], ks=3, stride=1,
+                ResidualBlock(cs[6] + cs[2], cs[6], ks=8, stride=1,
                               dilation=1, D=self.D),
-                ResidualBlock(cs[6], cs[6], ks=3, stride=1, dilation=1, D=self.D),
+                ResidualBlock(cs[6], cs[6], ks=8, stride=1, dilation=1, D=self.D),
             )
         ])
 
@@ -347,9 +347,9 @@ class MinkUNetDiff(nn.Module):
         self.up3 = nn.ModuleList([
             BasicDeconvolutionBlock(cs[6], cs[7], ks=16, stride=16, D=self.D),
             nn.Sequential(
-                ResidualBlock(cs[7] + cs[1], cs[7], ks=3, stride=1,
+                ResidualBlock(cs[7] + cs[1], cs[7], ks=8, stride=1,
                               dilation=1, D=self.D),
-                ResidualBlock(cs[7], cs[7], ks=3, stride=1, dilation=1, D=self.D),
+                ResidualBlock(cs[7], cs[7], ks=8, stride=1, dilation=1, D=self.D),
             )
         ])
 
@@ -376,9 +376,9 @@ class MinkUNetDiff(nn.Module):
         self.up4 = nn.ModuleList([
             BasicDeconvolutionBlock(cs[7], cs[8], ks=16, stride=16, D=self.D),
             nn.Sequential(
-                ResidualBlock(cs[8] + cs[0], cs[8], ks=3, stride=1,
+                ResidualBlock(cs[8] + cs[0], cs[8], ks=8, stride=1,
                               dilation=1, D=self.D),
-                ResidualBlock(cs[8], cs[8], ks=3, stride=1, dilation=1, D=self.D),
+                ResidualBlock(cs[8], cs[8], ks=8, stride=1, dilation=1, D=self.D),
             )
         ])
 

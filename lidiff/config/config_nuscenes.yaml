@@ -4,7 +4,7 @@ experiment:
 ##Data
 data:
     data_dir: '/storage_local/kwang/nuscenes/raw'
-    splats_dir: '/storage_local/kwang/nuscenes/framewise/'
+    splats_dir: '/storage_local/kwang/nuscenes/framewise_mini/'
     resolution: 0.01
     dataloader: 'NuScenes'
     num_lidar_points: 1000
@@ -17,8 +17,8 @@ train:
     uncond_w: 6.
     n_gpus: 1
     num_workers: 4
-    max_epoch: 1
-    lr: 0.0001
+    max_epoch: 100
+    lr: 0.001
     batch_size: 1
     decay_lr: 1.0e-4
 
@@ -50,7 +50,7 @@ diff:
 ##Network
 model:
     in_dim: 14
-    out_dim: 3
+    out_dim: 11
 
 log:
     wandb: True

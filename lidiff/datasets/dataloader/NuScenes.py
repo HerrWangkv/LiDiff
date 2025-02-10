@@ -848,11 +848,11 @@ class NuScenesDataset(Dataset):
 #                           canvas_size=200,)
 
 # Render splats
-# dataset = NuScenesDataset(version='v1.0-trainval', 
-#                           dataroot='/storage_local/kwang/nuscenes/raw', 
-#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-15_5',
-#                           split=[846], 
-#                           map_size=200, 
-#                           keys=['cameras', 'splats'],)
-# dataset.vis(0)
-# breakpoint()
+dataset = NuScenesDataset(version='v1.0-mini', 
+                          dataroot='/storage_local/kwang/nuscenes/raw', 
+                          splats_dir='/storage_local/kwang/nuscenes/framewise_mini',
+                          split=[0], 
+                          map_size=200, 
+                          keys=['cameras', 'bev', 'splats', 'boxes'],)
+dataset.vis(0)
+breakpoint()

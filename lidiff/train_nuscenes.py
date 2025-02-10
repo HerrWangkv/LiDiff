@@ -47,10 +47,10 @@ def main(config, weights, checkpoint, test):
         cfg['data']['data_dir'] = environ.get('TRAIN_DATABASE')
     
     if cfg['log']['wandb']:
-        wandb.init(project="known_means_bg", config=cfg)
+        wandb.init(project="known_means_bg_overfitting", config=cfg)
     #Load data and model
     if weights is None:
-        model = models.DiffusionSplats(cfg)
+        model = models.DiffusionSplatsPT(cfg)
     else:
         if test:
             # we load the current config file just to overwrite inference parameters to try different stuff during inference
@@ -99,7 +99,7 @@ def main(config, weights, checkpoint, test):
                           resume_from_checkpoint=checkpoint,
                           max_epochs= cfg['train']['max_epoch'],
                           callbacks=[lr_monitor, checkpoint_saver],
-                          check_val_every_n_epoch=1,
+                          check_val_every_n_epoch=100,
                           num_sanity_val_steps=0,
                           limit_val_batches=1,
                           accelerator='ddp',
@@ -111,7 +111,7 @@ def main(config, weights, checkpoint, test):
                           resume_from_checkpoint=checkpoint,
                           max_epochs= cfg['train']['max_epoch'],
                           callbacks=[lr_monitor, checkpoint_saver],
-                          check_val_every_n_epoch=1,
+                          check_val_every_n_epoch=100,
                           num_sanity_val_steps=0,
                           limit_val_batches=1,
                           )

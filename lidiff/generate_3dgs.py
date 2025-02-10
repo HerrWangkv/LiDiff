@@ -57,14 +57,14 @@ def main(config, weights):
 
     cfg = ckpt_cfg
 
-    model = models.DiffusionSplats.load_from_checkpoint(weights, hparams=cfg, map_location='cuda')
+    model = models.DiffusionSplatsPT.load_from_checkpoint(weights, hparams=cfg, map_location='cuda')
     model.to('cuda')
     print(model.hparams)
 
     dataloaders = datasets.dataloaders[cfg['data']['dataloader']](cfg)
     val_loader = dataloaders.val_dataloader()
     val_iter = iter(val_loader)
-    for i in range(10):
+    for i in range(1):
         batch = next(val_iter)
         for k in batch.keys():
             if isinstance(batch[k], torch.Tensor):

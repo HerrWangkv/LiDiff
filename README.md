@@ -17,8 +17,6 @@ Installing python (we have used python 3.9) packages pre-requisites:
 
 `sudo apt install build-essential python3-dev libopenblas-dev`
 
-`pip install pip==24.0`
-
 `pip install -r requirements.txt`
 
 (`conda install -c conda-forge gxx_linux-64=9.3.0`)
