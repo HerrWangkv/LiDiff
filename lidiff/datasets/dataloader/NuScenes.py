@@ -682,9 +682,11 @@ class NuScenesSplats(Dataset):
         attributes = np.vstack([x[None,:], y[None,:], z[None,:], f_dc, opacity[None,:], scale, rotation]).T
         return attributes
     
-    def render(self, index, gaussian=None, save_path=None):
+    def render(self, splats_index, pose_index=None, gaussian=None, save_path=None):
+        if pose_index is None:
+            pose_index = splats_index
         if gaussian is None:
-            gaussian = self.load_gt(index)
+            gaussian = self.load_gt(splats_index)
         if save_path is None:
             save_path = "rendered.png"
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
@@ -692,21 +694,37 @@ class NuScenesSplats(Dataset):
         for i, ax in enumerate(axes.flat):
             cam = cams[i]
             cam_idx = self.nusc.cameras[cam]
-            calib_token = self.nusc.camera_calib_tokens[cam_idx][index]
-            calib_data = self.nusc.get('calibrated_sensor', calib_token)
-            intrinsics = np.array(calib_data['camera_intrinsic'])
+            pose_calib_token = self.nusc.camera_calib_tokens[cam_idx][pose_index]
+            pose_calib_data = self.nusc.get('calibrated_sensor', pose_calib_token)
+            intrinsics = np.array(pose_calib_data['camera_intrinsic'])
             if cam_idx == 0:
                 extrinsics = np.eye(4)
             else:
-                cam_to_ego = np.eye(4)
-                cam_to_ego[:3, :3] = Quaternion(calib_data['rotation']).rotation_matrix
-                cam_to_ego[:3, 3] = np.array(calib_data['translation'])
-                cam_front_calib_token = self.nusc.camera_calib_tokens[0][index]
-                cam_front_calib_data = self.nusc.get('calibrated_sensor', cam_front_calib_token)
-                cam_front_to_ego = np.eye(4)
-                cam_front_to_ego[:3, :3] = Quaternion(cam_front_calib_data['rotation']).rotation_matrix
-                cam_front_to_ego[:3, 3] = np.array(cam_front_calib_data['translation'])
-                extrinsics = np.linalg.inv(cam_front_to_ego) @ cam_to_ego
+                pose_cam_to_pose_ego = np.eye(4)
+                pose_cam_to_pose_ego[:3, :3] = Quaternion(pose_calib_data['rotation']).rotation_matrix
+                pose_cam_to_pose_ego[:3, 3] = np.array(pose_calib_data['translation'])
+
+                splats_cam_front_calib_token = self.nusc.camera_calib_tokens[0][splats_index]
+                splats_cam_front_calib_data = self.nusc.get('calibrated_sensor', splats_cam_front_calib_token)
+                splats_cam_front_to_splats_ego = np.eye(4)
+                splats_cam_front_to_splats_ego[:3, :3] = Quaternion(splats_cam_front_calib_data['rotation']).rotation_matrix
+                splats_cam_front_to_splats_ego[:3, 3] = np.array(splats_cam_front_calib_data['translation'])
+
+                pose_ego_to_splats_ego = np.eye(4)
+                if splats_index != pose_index:
+                    splats_ego_pose = self.nusc.get_ego_pose(splats_index)
+                    splats_ego_to_world = np.eye(4)
+                    splats_ego_to_world[:3, :3] = Quaternion(splats_ego_pose['rotation']).rotation_matrix
+                    splats_ego_to_world[:3, 3] = np.array(splats_ego_pose['translation'])
+                    
+                    pose_ego_pose = self.nusc.get_ego_pose(pose_index)
+                    pose_ego_to_world = np.eye(4)
+                    pose_ego_to_world[:3, :3] = Quaternion(pose_ego_pose['rotation']).rotation_matrix
+                    pose_ego_to_world[:3, 3] = np.array(pose_ego_pose['translation'])
+                    pose_ego_to_splats_ego = np.linalg.inv(splats_ego_to_world) @ pose_ego_to_world
+
+
+                extrinsics = np.linalg.inv(splats_cam_front_to_splats_ego) @ pose_ego_to_splats_ego @ pose_cam_to_pose_ego
             img = render_gaussian(gaussian, extrinsics, intrinsics)
             ax.imshow(img[0].detach().cpu().numpy())
             ax.set_title(cam)
@@ -802,57 +820,57 @@ class NuScenesDataset(Dataset):
     def next_frame(self, index):
         return self[index+1] if (index + 1 < len(self.nusc.seq_indices)) and (self.nusc.seq_indices[index][0] == self.nusc.seq_indices[index+1][0]) else None
 
-    def render(self, index):
-        self.splats.render(index)
+    def render(self, splats_index, pose_index):
+        self.splats.render(splats_index=splats_index, pose_index=pose_index)
 
-    def vis(self, index):
+    def vis(self, splats_index, pose_index=None):
         if 'cameras' in self.keys:
-            self.cameras.vis(index)
+            self.cameras.vis(splats_index)
         if 'bev' in self.keys:
-            points = self.lidar[index] if 'lidar' in self.keys else None
-            boxes = self.boxes[index] if 'boxes' in self.keys else None
-            splats_pos = self.splats[index] if 'splats' in self.keys else None
-            self.bev.vis(index, points, boxes, splats_pos)
+            points = self.lidar[splats_index] if 'lidar' in self.keys else None
+            boxes = self.boxes[splats_index] if 'boxes' in self.keys else None
+            splats_pos = self.splats[splats_index] if 'splats' in self.keys else None
+            self.bev.vis(splats_index, points, boxes, splats_pos)
         if 'splats' in self.keys:
-            self.splats.render(index)
+            self.splats.render(splats_index=splats_index, pose_index=pose_index)
     
 
+if __name__ == "__main__":
+    # Sparse conversion
+    # from lidiff.utils.collations import splats_and_lidar_to_sparse
+    # dataset = NuScenesDataset(version='v1.0-trainval', 
+    #                           dataroot='/storage_local/kwang/nuscenes/raw', 
+    #                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2',
+    #                           split="train", 
+    #                           map_size=200, 
+    #                           keys=['lidar', 'splats'],)
+    # data = dataset[0]
+    # lidar = data['lidar']
+    # splats = data['splats']
+    # sparse = splats_and_lidar_to_sparse(splats, lidar, 18000) #splats_and_lidar_to_sparse(data['splats'], data['lidar'], 18000)
+    # breakpoint()
 
-# Sparse conversion
-# from lidiff.utils.collations import splats_and_lidar_to_sparse
-# dataset = NuScenesDataset(version='v1.0-trainval', 
-#                           dataroot='/storage_local/kwang/nuscenes/raw', 
-#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2',
-#                           split="train", 
-#                           map_size=200, 
-#                           keys=['lidar', 'splats'],)
-# data = dataset[0]
-# lidar = data['lidar']
-# splats = data['splats']
-# sparse = splats_and_lidar_to_sparse(splats, lidar, 18000) #splats_and_lidar_to_sparse(data['splats'], data['lidar'], 18000)
-# breakpoint()
+    # Preprocess map
+    # parser = argparse.ArgumentParser(description='NuScenes Dataset Preprocessing')
+    # parser.add_argument('--start_idx', '-s', type=int, required=True, help='Start index for preprocessing')
+    # parser.add_argument('--end_idx', '-e', type=int, required=True, help='End index for preprocessing')
+    # args = parser.parse_args()
 
-# Preprocess map
-# parser = argparse.ArgumentParser(description='NuScenes Dataset Preprocessing')
-# parser.add_argument('--start_idx', '-s', type=int, required=True, help='Start index for preprocessing')
-# parser.add_argument('--end_idx', '-e', type=int, required=True, help='End index for preprocessing')
-# args = parser.parse_args()
+    # start_idx = args.start_idx
+    # end_idx = args.end_idx
+    # dataset = NuScenesDataset(version='v1.0-trainval', 
+    #                           dataroot='/storage_local/kwang/nuscenes/raw', 
+    #                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2',
+    #                           split=list(range(start_idx, end_idx+1)),
+    #                           map_size=200, 
+    #                           canvas_size=200,)
 
-# start_idx = args.start_idx
-# end_idx = args.end_idx
-# dataset = NuScenesDataset(version='v1.0-trainval', 
-#                           dataroot='/storage_local/kwang/nuscenes/raw', 
-#                           splats_dir='/mrtstorage/datasets_tmp/nuscenes_3dgs/framewise_splats/180000_-100_100_-8_2',
-#                           split=list(range(start_idx, end_idx+1)),
-#                           map_size=200, 
-#                           canvas_size=200,)
-
-# Render splats
-dataset = NuScenesDataset(version='v1.0-mini', 
-                          dataroot='/storage_local/kwang/nuscenes/raw', 
-                          splats_dir='/storage_local/kwang/nuscenes/framewise_mini',
-                          split=[0], 
-                          map_size=200, 
-                          keys=['cameras', 'bev', 'splats', 'boxes'],)
-dataset.vis(0)
-breakpoint()
+    # Render splats
+    dataset = NuScenesDataset(version='v1.0-mini', 
+                            dataroot='/storage_local/kwang/nuscenes/raw', 
+                            splats_dir='/storage_local/kwang/nuscenes/framewise_mini',
+                            split=[0], 
+                            map_size=200, 
+                            keys=['cameras', 'splats', 'bev'],)
+    dataset.vis(60,70)
+    breakpoint()
